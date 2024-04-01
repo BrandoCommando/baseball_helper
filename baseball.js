@@ -99,6 +99,8 @@ class game {
       this.runs[this.ballSide]++;
       if(event)
       {
+        if(!this.scorebook[this.ballSide][this.inning][event.batterId])
+          this.scorebook[this.ballSide][this.inning][event.batterId] = {};
       	this.scorebook[this.ballSide][this.inning][event.batterId].rbis = 
       		(this.scorebook[this.ballSide][this.inning][event.batterId].rbis || 0) + 1;
         event.rbis = (event.rbis || 0) + 1;
@@ -472,6 +474,9 @@ class game {
           case 'caught_stealing':
             event.offense = "CS";
             break;
+          case 'advanced_on_error':
+            event.offense = "E";
+            break;
         }
         switch(event.attributes.playType)
         {
@@ -481,6 +486,7 @@ class game {
           case 'stole_base':
           case 'wild_pitch':
           case 'passed_ball':
+          case 'advanced_on_error':
             if(event.attributes.runnerId == this.lineup[tpos][this.currentBatter[tpos]])
             {
               if(event.attributes.base&&this.bases[event.attributes.base-1])
@@ -830,8 +836,8 @@ class game {
       marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85`;
       if(block.playType&&block.playType.indexOf("fly")>-1)
         marks += `c6-13 5.744-25.112`;
-      marks += " " + (block.location[0]-160)/10;
-      marks += " " + (320-block.location[1])/-8;
+      marks += " " + (block.location[0]-160)/7;
+      marks += " " + (340-block.location[1])/-7;
       marks += `" transform="translate(-13.749 -30.811)"/>
       `;
     }
