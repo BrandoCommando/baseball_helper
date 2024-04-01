@@ -93,6 +93,7 @@ class gamechanger {
     const opts = {headers,method,mode:"cors"};
     if(post) opts.body = JSON.stringify(post);
     const rheaders = [];
+    console.log(action);
     const result = await fetch("https://api.team-manager.gc.com/"+action, opts)
       .then((r)=>{
         let isJson = false;
@@ -112,7 +113,7 @@ class gamechanger {
       let data = false;
       if(!!this.cache&&!nocache)
       {
-        data = this.cache.get(action + (action.indexOf("me/")>-1 ? this.email : ""));
+        data = await this.cache.hget("gamechanger", action + (action.indexOf("me/")>-1 ? this.email : "")).catch();
         if(typeof data == "string" && data.length >= 2)
         {
           try {
@@ -127,7 +128,7 @@ class gamechanger {
       data = await this.fetchApi(false, action);
       if(!!this.cache&&!nocache&&!!data)
       {
-        this.cache.put(action + (action.indexOf("me/")>-1 ? this.email : ""), JSON.stringify(data));
+        await this.cache.hset("gamechanger", action + (action.indexOf("me/")>-1 ? this.email : ""), JSON.stringify(data)).catch();
       }
       return resolve(data);
     });
@@ -136,7 +137,7 @@ class gamechanger {
   {
     this.token = access_token;
     if(!!this.cache)
-      this.cache.put(this.email + "_access_token", access_token);
+      await this.cache.hset("gamechanger", this.email + "_access_token", access_token).catch();
     else {
       console.warn("No cache for GC");
       return false;
@@ -149,7 +150,7 @@ class gamechanger {
     {
       access_token.access.expiry = new Date(access_token.access.expires*1000);
       access_token.refresh.expiry = new Date(access_token.refresh.expires*1000);
-      this.cache.put(this.email + "_access_token", JSON.stringify(access_token));
+      await this.cache.hset("gamechanger", this.email + "_access_token", JSON.stringify(access_token)).catch();
       this.token = access_token;
       return this.token;
     }
@@ -161,7 +162,7 @@ class gamechanger {
         return this.token;
     if(!!this.cache)
     {
-      const at = this.cache.put(this.email + "_access_token");
+      const at = await this.cache.hget("gamechanger", this.email + "_access_token");
       if(typeof at == "string")
       {
         const jt = JSON.parse(at);
@@ -176,7 +177,7 @@ class gamechanger {
             if(!!this.token)
               return this.token;
           }
-          this.cache.del(this.email + "_access_token");
+          await this.cache.hdel("gamechanger", this.email + "_access_token").catch();
         }
       } else return at;
     }
@@ -286,11 +287,11 @@ class gamechanger {
   }
   async loadData() {
     await this.getToken();
-    this.user = await this.getApi("me/user");
+    this.user = await this.getApi("me/user", true);
     this.players = {};
     this.games = [];
     const promises = [];
-    const teams = await this.getApi("me/teams?include=user_team_associations");
+    const teams = await this.getApi("me/teams?include=user_team_associations", true);
     this.teams = Object.values(teams).reduce((arr,team)=>{
       const t = new Team(team);
       arr.push(t);
@@ -495,6 +496,7 @@ class gamechanger {
         document.querySelectorAll('.toggleNext').forEach((el)=>el.addEventListener('click',()=>{el.nextSibling.classList.toggle('hide');}));
         document.querySelectorAll('.togglePrev').forEach((el)=>el.addEventListener('click',()=>{el.previousSibling.classList.toggle('hide');})&&el.addEventListener('click',()=>{el.previousSibling.classList.toggle('hide')}));
         </script>`)
+      res.write(`<a href="/logout">Log Out</a>`);
       res.write(`</body></html>`);
       res.end();
     } else res.send(gc);
