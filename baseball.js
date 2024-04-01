@@ -83,16 +83,24 @@ class game {
         this.inning++;
     }
   }
-  advanceBase(base, event) {
+  advanceBase(base, event, last) {
     if(base==0&&!this.bases[base]) {
       this.bases[0] = this.lineup[this.ballSide][this.currentBatter[this.ballSide]];
     }
     if(!this.bases[base]) return;
+    const runnerId = this.bases[base];
+    const scoreBlock = this.scorebook[this.ballSide][this.inning][runnerId];
+    if(!scoreBlock.bases)
+    	scoreBlock.bases = [];
+    if(event&&(last||base==3))
+	    scoreBlock.bases[base] = event.offense;
     if(base>=3)
     {
       this.runs[this.ballSide]++;
       if(event)
       {
+      	this.scorebook[this.ballSide][this.inning][event.batterId].rbis = 
+      		(this.scorebook[this.ballSide][this.inning][event.batterId].rbis || 0) + 1;
         event.rbis = (event.rbis || 0) + 1;
         event.runs = this.runs[this.ballSide];
         if(event.shortResult)
@@ -100,18 +108,18 @@ class game {
         else event.shortResult = "";
         event.shortResult += this.getLongRuns();
       }
-      this.scorebook[this.ballSide][this.inning][this.bases[3]].runs = this.runs[this.ballSide];
+      scoreBlock.runs = this.runs[this.ballSide];
       this.bases[3] = false;
     } else {
       this.advanceBase(base + 1, event);
-      this.bases[base+1] = this.bases[base];
+      this.bases[base+1] = runnerId;
       this.bases[base] = false;
     }
   }
-  advanceBases(event) {
-    this.advanceBase(3,event);
-    this.advanceBase(2,event);
-    this.advanceBase(1,event);
+  advanceBases(event,last) {
+    this.advanceBase(3,event,last);
+    this.advanceBase(2,event,last);
+    this.advanceBase(1,event,last);
   }
   clearBases() {
     this.bases[0] = this.bases[1] = this.bases[2] = this.bases[3] = false;
@@ -143,7 +151,7 @@ class game {
     return false;
   }
   walk(event) {
-    this.advanceBase(0,event);
+    this.advanceBase(0,event,1);
     this.resetCount();
     this.nextBatter(true);
   }
@@ -296,7 +304,7 @@ class game {
         break;
       case "balk":
         event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
-        this.advanceBases(event);
+        this.advanceBases(event,1);
         break;
       case "pitch":
         this.pitched = true;
@@ -315,7 +323,7 @@ class game {
               event.outs = this.counts.outs;
               if(event.attributes.playResult.indexOf("advance_runners")>-1)
               {
-                this.advanceBases(event);
+                this.advanceBases(event,1);
               }
             }
             switch(event.attributes.playResult)
@@ -386,7 +394,7 @@ class game {
             {
               if(this.bases[3])
                 scored = true;
-              this.advanceBases(event);
+              this.advanceBases(event,1);
             }
             this.scorebook[this.ballSide][this.inning][event.batterId].outs = event.outs;
             if(event.shortResult)
@@ -396,7 +404,7 @@ class game {
             break;
           case "fielders_choice":
             this.advanceBases(event);
-            this.advanceBase(0,event);
+            this.advanceBase(0,event,1);
             break;
           case "other_out":
           case "batter_out":
@@ -411,27 +419,34 @@ class game {
             this.bases[0] = false;
             break;
           case "dropped_third_strike":
+          	event.offense = "Kd3";
+          	this.advanceBase(0,event);
+          	break;
           case "single":
+	          event.offense = "1B";
             this.advanceBases(event);
-            this.advanceBase(0,event);
+            this.advanceBase(0,event,1);
             break;
           case "double":
+	          event.offense = "2B";
             this.advanceBases(event);
             this.advanceBase(0,event);
-            this.advanceBases(event);
+            this.advanceBases(event,1);
             break;
           case "triple":
+          	event.offense = "3B";
             this.advanceBases(event);
             this.advanceBase(0,event);
             this.advanceBases(event);
-            this.advanceBases(event);
+            this.advanceBases(event,1);
             break;
           case "home_run":
+          	event.offense = "HR";
             this.advanceBases(event);
             this.advanceBase(0,event);
             this.advanceBases(event);
             this.advanceBases(event);
-            this.advanceBases(event);
+            this.advanceBases(event,1);
             break;
           default:
             console.log(`New ball_in_play playResult: ${event.attributes.playResult}`);
@@ -472,7 +487,7 @@ class game {
                 event.attributes.runnerId = this.bases[event.attributes.base-1];
               else console.warn(`Still bad runner: ${event.attributes.runnerId}`, {event,bases:this.bases});
             }
-            this.advanceBase(event.attributes.base-1);
+            this.advanceBase(event.attributes.base-1,event,1);
             break;
           case 'out_on_last_play':
           case 'caught_stealing':
@@ -508,7 +523,7 @@ class game {
           case 'remained_on_last_play':
             break;
           default:
-            this.advanceBase(event.attributes.base-1);
+            this.advanceBase(event.attributes.base-1,event,1);
             console.warn(`New base_running playType: ${event.attributes.playType}`);
         }
         break;
@@ -781,42 +796,62 @@ class game {
           `;
       }
     }
+    const base1 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15" transform="translate(-13.749 -30.811)"/>`;
+    const base2 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15" transform="translate(-13.749 -30.811)"/>`;
+    const base3 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15-15 15" transform="translate(-13.749 -30.811)"/>`;
+    const base4 = `<path style="fill:#4d4d4d;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15-15 15 15 15z" transform="translate(-13.749 -30.811)"/>`;
+    if(block.offense=="BB")
+      marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -30.811)"/>`;
+    if(block.offense=="1B")
+      marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -19.811)"/>`;
+    if(block.offense=="2B")
+      marks += `${base2}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -8.811)"/>`;
+    if(block.offense=="3B")
+      marks += `${base3}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 2.189)"/>`;
+    if(block.offense=="HR")
+      marks += `${base4}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 13.189)"/>`;
+    else if(!!block.runs)
+    	marks += `${base4}`;
+    else if(block.bases?.length==3)
+    	marks += `${base3}`;
+    else if(block.bases?.length==2)
+    	marks += `${base2}`;
+    if(block.bases?.length>1&&!!block.bases[0])
+    	marks += `<text xml:space="preserve" x="67" y="84" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="67" y="84">${block.bases[0]}</tspan></text>`;
+ 		if(block.bases?.length>2&&!!block.bases[1])
+ 			marks += `<text xml:space="preserve" x="67" y="60" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="67" y="60">${block.bases[1]}</tspan></text>`;
+ 		if(block.bases?.length>3&&!!block.bases[2])
+ 			marks += `<text xml:space="preserve" x="42" y="60" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="42" y="60">${block.bases[2]}</tspan></text>`;
+ 		if(block.bases?.length>=4&&!!block.bases[3])
+ 			marks += `<text xml:space="preserve" x="42" y="84" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="42" y="84">${block.bases[3]}</tspan></text>`;
+ 			
     if(block.location)
     {
       marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85`;
       if(block.playType&&block.playType.indexOf("fly")>-1)
         marks += `c6-13 5.744-25.112`;
       marks += " " + (block.location[0]-160)/10;
-      marks += " " + (300-block.location[1])/-10;
+      marks += " " + (320-block.location[1])/-8;
       marks += `" transform="translate(-13.749 -30.811)"/>
       `;
     }
-    const base1 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15" transform="translate(-13.749 -30.811)"/>`;
-    const base2 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15" transform="translate(-13.749 -30.811)"/>`;
-    const base3 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15-15 15" transform="translate(-13.749 -30.811)"/>`;
-    const base4 = `<path style="fill:#4d4d4d;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15-15 15 15 15z" transform="translate(-13.749 -30.811)"/>`;
-    if(block.offense=="BB")
-      marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13.749 -30.811)"/>`;
-    if(block.offense=="1B")
-      marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13.749 -19.811)"/>`;
-    if(block.offense=="2B")
-      marks += `${base2}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13.749 -8.811)"/>`;
-    if(block.offense=="3B")
-      marks += `${base3}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13.749 2.189)"/>`;
-    if(block.offense=="HR")
-      marks += `${base4}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13.749 13.189)"/>`;
-    marks = `<svg width="81" height="56" viewBox="0 0 85.713 59.396" xmlns="http://www.w3.org/2000/svg">
-        <path style="fill:none;stroke:#1a1a1a;stroke-width:.237034" d="M13.867 30.93h85.476v59.159H13.867z" transform="translate(-13.749 -30.811)"/>
-        <path style="fill:none;stroke:#333;stroke-width:.264583;stroke-dasharray:1.5875,1.5875;stroke-dashoffset:0" d="m43.572 68.065 15.54-15.542 15.542 15.542-15.541 15.54z" transform="translate(-13.749 -28.894)"/>
-        <path style="fill:none;stroke:#333;stroke-width:.27213;stroke-dasharray:1.63278,1.63278;stroke-dashoffset:0" d="M43.48 67.968 29.637 54.124" transform="translate(-13.749 -28.894)"/>
-        <path style="fill:none;stroke:#333;stroke-width:.274281;stroke-dasharray:1.64569,1.64569;stroke-dashoffset:0" d="M74.654 68.065 88.5 54.22" transform="translate(-13.749 -28.894)"/>
-        <path style="fill:none;stroke:#333;stroke-width:.264583;stroke-dasharray:1.5875,1.5875;stroke-dashoffset:0" d="M29.636 54.124S36.72 33.772 59.052 33.71C82.34 33.646 88.5 54.22 88.5 54.22" transform="translate(-13.749 -28.894)"/>
+    if(block.outs)
+    {
+    	marks += `<text xml:space="preserve" x="88" y="43.8" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#f00;stroke:none;text-align:center;" x="88" y="43.8">${block.outs}</tspan></text>`;
+    	marks += `<path style="fill:none;stroke:red;stroke-width:1.2;stroke-linecap:round" d="M96 30a6 6 0 0 1-6 6 6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6z" transform="translate(-13.749 -19.811)"/>`;
+    }
+    marks = `<svg width="162" height="112" viewBox="0 0 85.713 59.396" xmlns="http://www.w3.org/2000/svg">
+        <path style="fill:none;stroke:#1a1a1a;stroke-width:.237034" d="M13.867 30.93h85.476v59.159H13.867z" transform="translate(-13 -30.811)"/>
+        <path style="fill:none;stroke:#333;stroke-width:.264583;stroke-dasharray:1.5875,1.5875;stroke-dashoffset:0" d="m43.572 68.065 15.54-15.542 15.542 15.542-15.541 15.54z" transform="translate(-13 -28.894)"/>
+        <path style="fill:none;stroke:#333;stroke-width:.27213;stroke-dasharray:1.63278,1.63278;stroke-dashoffset:0" d="M43.48 67.968 29.637 54.124" transform="translate(-13 -28.894)"/>
+        <path style="fill:none;stroke:#333;stroke-width:.274281;stroke-dasharray:1.64569,1.64569;stroke-dashoffset:0" d="M74.654 68.065 88.5 54.22" transform="translate(-13 -28.894)"/>
+        <path style="fill:none;stroke:#333;stroke-width:.264583;stroke-dasharray:1.5875,1.5875;stroke-dashoffset:0" d="M29.636 54.124S36.72 33.772 59.052 33.71C82.34 33.646 88.5 54.22 88.5 54.22" transform="translate(-13 -28.894)"/>
         <path style="fill:none;stroke:#333;stroke-width:.305288;stroke-dasharray:1.83173,1.83173;stroke-dashoffset:0" d="M84.044 82.423V74.79h7.633M76.26 90.207v-7.632h7.632M84.044 90.207v-7.632h7.633M91.83 90.207v-7.632h7.632M91.83 82.423V74.79h7.632" transform="translate(-13.749 -30.811)"/>
-        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.856" y="41.065" transform="translate(-13.749 -30.811)"><tspan style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;fill:gray;stroke:none;stroke-width:.264583" x="21.856" y="41.065">BB</tspan></text>
-        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.731" y="52.037" transform="translate(-13.749 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.731" y="52.037">1B</tspan></text>
-        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="22.008" y="63.009" transform="translate(-13.749 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="22.008" y="63.009">2B</tspan></text>
-        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.967" y="73.981" transform="translate(-13.749 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.967" y="73.981">3B</tspan></text>
-        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.689" y="85.022" transform="translate(-13.749 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.689" y="85.022">HR</tspan></text>
+        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.856" y="41.065" transform="translate(-13 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.856" y="41.065">BB</tspan></text>
+        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.731" y="52.037" transform="translate(-13 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.731" y="52.037">1B</tspan></text>
+        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="22.008" y="63.009" transform="translate(-13 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="22.008" y="63.009">2B</tspan></text>
+        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.967" y="73.981" transform="translate(-13 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.967" y="73.981">3B</tspan></text>
+        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.689" y="85.022" transform="translate(-13 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.689" y="85.022">HR</tspan></text>
         ${marks}
       </svg>`;
     // return marks;
