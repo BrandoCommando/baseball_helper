@@ -1,6 +1,7 @@
 const CryptoJS = require("crypto-js");
 const bcrypt = require("bcrypt");
 const fetch = require('node-fetch');
+const { ScoreBook } = require('./scorebook');
 const { Baseball, Game, Team } = require("./baseball");
 
 class gamechanger {
@@ -12,6 +13,7 @@ class gamechanger {
     this.signKey = "2l2hSBkHeJP3xv2BtC7qpZ6wYoOL7xAJK2NxvfVSyyI=";
     this.lastSignature = false;
     this.token = false;
+    this.scorebook = new ScoreBook();
     this.cache = cache;
   }
   flatten(e) {
@@ -288,10 +290,12 @@ class gamechanger {
   async loadData() {
     await this.getToken();
     this.user = await this.getApi("me/user", true);
+    if(!this.user.id) return false;
     this.players = {};
     this.games = [];
     const promises = [];
     const teams = await this.getApi("me/teams?include=user_team_associations", true);
+    if(!teams) return false;
     this.teams = Object.values(teams).reduce((arr,team)=>{
       const t = new Team(team);
       arr.push(t);
@@ -300,6 +304,10 @@ class gamechanger {
     for(var index=0;index<this.teams.length;index++)
     {
       const team = new Team(this.teams[index]);
+      if(!team.id)
+      {
+        console.error("No team id", team);
+      }
       // console.log(`Loading team`,team);
       await this.loadPlayers(team);
       // await this.getApi(`teams/${team.id}`);
@@ -418,11 +426,13 @@ class gamechanger {
           res.write(`<div class="scorebook">`);
           for(var side=0;side<2;side++)
           {
+            const book = game.scorebook.getBook(side);
             res.write(`<table border=1>
               <thead><tr><td width="200">Player</td>`);
-            var inning=0;
-            for(inning=0;inning<=game.inning;inning++)
-              res.write(`<td>${inning+1}</td>`);
+            book.columns.forEach((col)=>{
+              if(!Object.values(col.plays).find((play)=>play.pitches.length)) return;
+              res.write(`<td>${col.inning}</td>`);
+            });
             res.write("</tr>\n");
             for(var benchPos=0;benchPos<game.lineup[side].length;benchPos++)
             {
@@ -440,19 +450,18 @@ class gamechanger {
               }
               res.write(`
                 <tr><td>${player}</td>`);
-              for(var inning=0;inning<=game.inning;inning++)
-              {
-                if(!game.scorebook[side][inning]) continue;
-                const block = game.scorebook[side][inning][playerId];
+              book.columns.forEach((col)=>{
+                if(!Object.values(col.plays).find((play)=>play.pitches.length)) return;
+                const block = col.plays[playerId];
                 res.write(`<td>`);
                 if(block)
                 {
                   res.write(`<div class="toggleNext">`);
-                  res.write(game.getScoreHTML(block));
+                  res.write(ScoreBook.getScoreHTML(block));
                   res.write(`</div><div class="hide float">${JSON.stringify(block)}</div>`);
                 }
                 res.write(`</td>`);
-              }
+              });
               res.write("</tr>");
             }
             res.write(`</table>`);

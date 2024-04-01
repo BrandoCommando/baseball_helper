@@ -12,17 +12,21 @@ app.use(bodyParser.json({limit:'2mb',verify:(req,res,buf,enc)=>{if(buf&&buf.leng
 app.use(express.urlencoded({extended:true}));
 
 app.get('/', async(req,res)=>{
-  if(req.cookies?.gc_token)
+  if(req.cookies?.gc_email)
   {
-    const token = JSON.parse(req.cookies.gc_token);
+    const gc = new GameChanger(req.cookies.gc_email, null, cache);
+    const token = await gc.getToken();
     if(token?.access)
     {
-      console.log(`Logged in with ${req.cookies.gc_user}`, token);
-      const gc = new GameChanger(req.cookies.gc_user, null, cache);
-      await gc.storeToken(token);
-      await gc.handleReq(req,res);
+      const me = await gc.getApi("me/user", true)
+      if(me.id)
+      {
+        console.log(`Logged in with ${req.cookies.gc_email}`, me);
+        await gc.handleReq(req,res);
+      } else console.warn("Invalid user", me);
+      // else res.clearCookie("gc_token");
     } else {
-      console.warn("Invalid token", [token,req.cookies.gc_token]);
+      console.warn("Invalid token", token);
     }
   }
   if(!res.headersSent)
@@ -42,15 +46,11 @@ app.post('/login', async(req,res)=>{
     console.log(`Logging in with ${req.body.user}`);
     const gc = new GameChanger(req.body.user,req.body.pass,cache);
     console.log("About me?", await gc.getApi("me/user",true));
-    const token = gc.token;
-    if(token.access) {
-      res.cookie("gc_token", JSON.stringify(token));
-    }
   }
   res.redirect("/");
 });
 app.get('/logout', async(req,res)=>{
-  res.clearCookie("gc_token");
+  await cache.hdel("gamechanger", req.cookies.gc_email + "_access_token");
   res.redirect("/");
 });
   

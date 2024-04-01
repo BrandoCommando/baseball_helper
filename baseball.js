@@ -1,3 +1,5 @@
+const { ScoreBook } = require("./scorebook");
+
 class baseball {
   constructor() {
     this.teams = [];
@@ -42,7 +44,7 @@ class game {
     this.bases = [false,false,false,false]; // 0 = Home, 1 = 1B, 2 = 2B, 3 = 3B
     this.runs = [0,0];
     this.inning = 0;
-    this.scorebook = [[{}],[{}]]; // side, inning, playerId
+    this.scorebook = new ScoreBook();
     this.requestor = requestor;
     Object.keys(params).forEach((k)=>this[k] = params[k]);
     if(team?.id&&this.home_away)
@@ -80,7 +82,10 @@ class game {
       this.counts.outs = 0;
       this.ballSide = 1 - this.ballSide;
       if(this.ballSide == 0)
+      {
         this.inning++;
+        this.scorebook.newInning();
+      }
     }
   }
   advanceBase(base, event, last) {
@@ -89,20 +94,15 @@ class game {
     }
     if(!this.bases[base]) return;
     const runnerId = this.bases[base];
-    const scoreBlock = this.scorebook[this.ballSide][this.inning][runnerId];
-    if(!scoreBlock.bases)
-    	scoreBlock.bases = [];
+    const block = this.scorebook.getCurrentBlock(this.ballSide, runnerId); // [this.ballSide][this.inning][runnerId];
     if(event&&(last||base==3))
-	    scoreBlock.bases[base] = event.offense;
+	    block.bases[base] = event.offense;
     if(base>=3)
     {
       this.runs[this.ballSide]++;
       if(event)
       {
-        if(!this.scorebook[this.ballSide][this.inning][event.batterId])
-          this.scorebook[this.ballSide][this.inning][event.batterId] = {};
-      	this.scorebook[this.ballSide][this.inning][event.batterId].rbis = 
-      		(this.scorebook[this.ballSide][this.inning][event.batterId].rbis || 0) + 1;
+        this.scorebook.getCurrentBlock(this.ballSide, event.batterId).rbis++;;
         event.rbis = (event.rbis || 0) + 1;
         event.runs = this.runs[this.ballSide];
         if(event.shortResult)
@@ -110,7 +110,7 @@ class game {
         else event.shortResult = "";
         event.shortResult += this.getLongRuns();
       }
-      scoreBlock.runs = this.runs[this.ballSide];
+      block.runs = this.runs[this.ballSide];
       this.bases[3] = false;
     } else {
       this.advanceBase(base + 1, event);
@@ -138,7 +138,7 @@ class game {
       this.bases[0] = 
       this.lineup
         [this.ballSide]
-        [this.currentBatter]);
+        [this.currentBatter[this.ballSide]]);
   }
   out() {
     if(!this.pitched) return;
@@ -163,14 +163,6 @@ class game {
     if(this.teams[1].id==teamId)
       return 1;
     return -1;
-  }
-  prepareScorebook(event) {
-    if(!this.scorebook[this.ballSide])
-      this.scorebook[this.ballSide] = [];
-    if(!this.scorebook[this.ballSide][this.inning])
-      this.scorebook[this.ballSide][this.inning] = {};
-    if(!this.scorebook[this.ballSide][this.inning][event.batterId])
-      this.scorebook[this.ballSide][this.inning][event.batterId] = {"pitches":[],"strikes":0,"balls":0};
   }
   processEvent(event, parent) {
     if(Array.isArray(event))
@@ -204,6 +196,7 @@ class game {
     }
     let tpos = this.ballSide;
     if(event.attributes?.teamId) tpos = this.getTeamPos(event.attributes.teamId);
+    event.home = !!tpos;
     switch(event.code)
     {
       case "set_teams":
@@ -309,233 +302,19 @@ class game {
         this.advanceBases(event,1);
         break;
       case "pitch":
-        this.pitched = true;
-        event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
-        this.prepareScorebook(event);
-        this.pitchCounts[1-tpos]++;
-        // if(event.attributes?.advancesCount)
-        {
-          if(event.attributes.playResult)
-          {
-            let playHandled = false;
-            if(event.attributes.playResult.indexOf("out")>-1)
-            {
-              playHandled = true;
-              this.out();
-              event.outs = this.counts.outs;
-              if(event.attributes.playResult.indexOf("advance_runners")>-1)
-              {
-                this.advanceBases(event,1);
-              }
-            }
-            switch(event.attributes.playResult)
-            {
-              case 'dropped_third_strike_batter_out':
-                break;
-              default:
-                console.log(`New playResult: ${event.attributes.playResult} (${playHandled})`);
-            }
-          }
-          if(event.attributes?.result=="ball")
-          {
-            this.scorebook[this.ballSide][this.inning][event.batterId].pitches.push("B");
-            if((this.scorebook[this.ballSide][this.inning][event.batterId].balls=++this.counts.balls)>=4)
-            {
-              event.playResult = "BB";
-              this.walk(event);
-            }
-          }
-          else if(event.attributes.result == "foul")
-          {
-            this.scorebook[this.ballSide][this.inning][event.batterId].pitches.push("F");
-            if(this.counts.strikes<3 && event.attributes.advancesCount) {
-              this.counts.strikes++;
-              this.scorebook[this.ballSide][this.inning][event.batterId].strikes = this.counts.strikes;
-            }
-          }
-          else if(event.attributes?.result!="ball_in_play")
-          {
-            if(event.attributes.advancesCount&&(this.counts.strikes<=2||event.attributes.result.indexOf("strike")>-1))
-            {
-              this.counts.strikes++;
-              this.scorebook[this.ballSide][this.inning][event.batterId].pitches.push("S");
-              this.scorebook[this.ballSide][this.inning][event.batterId].strikes = this.counts.strikes;
-            }
-            if(this.counts.strikes>=3)
-            {
-              if(event.attributes.result.indexOf("swinging")==-1)
-                event.playResult = "ꓘ";
-              else event.playResult = "K";
-              this.scorebook[this.ballSide][this.inning][event.batterId].defense = event.playResult;
-              if(!event.attributes.playResult)
-                event.attributes.playResult = event.playResult;
-              this.out();
-              event.outs = this.counts.outs;
-              this.scorebook[this.ballSide][this.inning][event.batterId].outs = event.outs;
-            }
-          }
-        }
+        this.handlePitch(event);
         break;
       case "ball_in_play":
-        event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
-        this.prepareScorebook(event);
-        this.scorebook[this.ballSide][this.inning][event.batterId].playType = event.attributes.playType;
-        if(event.attributes.defenders?.length)
-          this.scorebook[this.ballSide][this.inning][event.batterId].location = [
-            Math.round(event.attributes.defenders[0].location.x),
-            Math.round(event.attributes.defenders[0].location.y)
-          ];
-        switch(event.attributes.playResult)
-        {
-          case "batter_out_advance_runners":
-            this.out();
-            event.outs = this.counts.outs;
-            this.bases[0] = false;
-            let scored = false;
-            if(this.counts.outs<3)
-            {
-              if(this.bases[3])
-                scored = true;
-              this.advanceBases(event,1);
-            }
-            this.scorebook[this.ballSide][this.inning][event.batterId].outs = event.outs;
-            if(event.shortResult)
-              event.shortResult += " | ";
-            else event.shortResult = "";
-            event.shortResult += this.getLongOuts();
-            break;
-          case "fielders_choice":
-            this.advanceBases(event);
-            this.advanceBase(0,event,1);
-            break;
-          case "other_out":
-          case "batter_out":
-          case "dropped_third_strike_batter_out":
-          case "offensive_interference":
-            this.out();
-            event.outs = this.counts.outs;
-            event.shortResult = this.getLongOuts();
-            if(event.defense)
-              this.scorebook[this.ballSide][this.inning][event.batterId].defense = event.defense;
-            this.scorebook[this.ballSide][this.inning][event.batterId].outs = event.outs;
-            this.bases[0] = false;
-            break;
-          case "dropped_third_strike":
-          	event.offense = "Kd3";
-          	this.advanceBase(0,event);
-          	break;
-          case "single":
-	          event.offense = "1B";
-            this.advanceBases(event);
-            this.advanceBase(0,event,1);
-            break;
-          case "double":
-	          event.offense = "2B";
-            this.advanceBases(event);
-            this.advanceBase(0,event);
-            this.advanceBases(event,1);
-            break;
-          case "triple":
-          	event.offense = "3B";
-            this.advanceBases(event);
-            this.advanceBase(0,event);
-            this.advanceBases(event);
-            this.advanceBases(event,1);
-            break;
-          case "home_run":
-          	event.offense = "HR";
-            this.advanceBases(event);
-            this.advanceBase(0,event);
-            this.advanceBases(event);
-            this.advanceBases(event);
-            this.advanceBases(event,1);
-            break;
-          default:
-            console.log(`New ball_in_play playResult: ${event.attributes.playResult}`);
-        }
-        if(event.defense)
-          this.scorebook[this.ballSide][this.inning][event.batterId].defense = event.defense;
-        this.resetCount();
-        this.nextBatter(true);
+        this.handleBallInPlay(event);
         break;
       case "base_running":
         // event.batterId = this.lineup[tpos][this.currentBatter[tpos]]
-        switch(event.attributes.playType)
-        {
-          case 'stole_base':
-            event.offense = "SB";
-            break;
-          case 'wild_pitch':
-            event.offense = "WP";
-            break;
-          case 'passed_ball':
-            event.offense = "PB";
-            break;
-          case 'caught_stealing':
-            event.offense = "CS";
-            break;
-          case 'advanced_on_error':
-            event.offense = "E";
-            break;
-        }
-        switch(event.attributes.playType)
-        {
-          case 'advanced_on_last_play':
-          case 'other_advance':
-          case 'defensive_indifference':
-          case 'stole_base':
-          case 'wild_pitch':
-          case 'passed_ball':
-          case 'advanced_on_error':
-            if(event.attributes.runnerId == this.lineup[tpos][this.currentBatter[tpos]])
-            {
-              if(event.attributes.base&&this.bases[event.attributes.base-1])
-                event.attributes.runnerId = this.bases[event.attributes.base-1];
-              else console.warn(`Still bad runner: ${event.attributes.runnerId}`, {event,bases:this.bases});
-            }
-            this.advanceBase(event.attributes.base-1,event,1);
-            break;
-          case 'out_on_last_play':
-          case 'caught_stealing':
-            this.pitched = true;
-            this.out();
-            event.outs = this.counts.outs;
-            const lastEvent = this.events[this.events.length-1];
-            if(lastEvent?.shortResult)
-              lastEvent.shortResult = lastEvent.shortResult.replace("SAC","");
-            if(lastEvent?.offense)
-              lastEvent.offense = lastEvent.offense.replace("SAC","");
-            if(lastEvent?.defense)
-              lastEvent.defense = lastEvent.defense.replace("SAC","");
-            let defenders = "";
-            if(event.attributes?.defenders?.length)
-              defenders = this.getOutCode(event);
-            else if(lastEvent?.attributes?.defenders?.length)
-              event.offense = defenders = this.getOutCode(lastEvent);
-            if(defenders)
-               event.shortResult = (event.shortResult ? event.shortResult+" | ":"")
-            if(lastEvent?.attributes?.extendedPlayResult=="double_play")
-              event.shortResult += "DP";
-            if(defenders)
-              event.shortResult += defenders;
-            event.shortResult += " | " + this.getLongOuts();
-
-            let base = this.getRunnerBase(event.attributes.runnerId);
-            if(base===false&&typeof(event.attributes.base)!="undefined")
-              base = event.attributes.base;
-            // console.log(`Out on ${base}B: ${event.attributes.runnerId} => `+this.bases.join("->"));
-            this.bases[base] = false;
-            break;
-          case 'remained_on_last_play':
-            break;
-          default:
-            this.advanceBase(event.attributes.base-1,event,1);
-            console.warn(`New base_running playType: ${event.attributes.playType}`);
-        }
+        this.handleBaseRunning(event);
         break;
       case "end_half":
         this.clearBases();
         this.resetCount(true);
+        if(this.ballSide===0) this.scorebook.newInning();
         break;
       case "end_at_bat":
         event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
@@ -582,8 +361,8 @@ class game {
     */
     if(event.playResult)
       event.shortResult = this.getShortResult(event);
-    if(event.defense&&this.scorebook[tpos][this.inning][event.batterId])
-      this.scorebook[tpos][this.inning][event.batterId].defense = event.defense;
+    // if(event.defense&&this.scorebook[tpos][this.inning][event.batterId])
+    //   this.scorebook[tpos][this.inning][event.batterId].defense = event.defense;
     if(event.compactorAttributes)
       delete event.compactorAttributes;
     if(!event.attributes)
@@ -593,6 +372,234 @@ class game {
     {
       this.resetCount(true);
       this.clearBases();
+    }
+  }
+  handlePitch(event) {
+    const tpos = event.home ? 1 : 0;
+    this.pitched = true;
+    event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
+    const block = this.scorebook.getCurrentBlock(tpos, event.batterId);
+    this.pitchCounts[1-tpos]++;
+    // if(event.attributes?.advancesCount)
+    {
+      if(event.attributes.playResult)
+      {
+        let playHandled = false;
+        if(event.attributes.playResult.indexOf("out")>-1)
+        {
+          playHandled = true;
+          this.out();
+          event.outs = this.counts.outs;
+          if(event.attributes.playResult.indexOf("advance_runners")>-1)
+          {
+            this.advanceBases(event,1);
+          }
+        }
+        switch(event.attributes.playResult)
+        {
+          case 'dropped_third_strike_batter_out':
+            break;
+          default:
+            console.log(`New playResult: ${event.attributes.playResult} (${playHandled})`);
+        }
+      }
+      if(event.attributes?.result=="ball")
+      {
+        block.pitches.push("B");
+        if((block.balls=++this.counts.balls)>=4)
+        {
+          event.playResult = "BB";
+          this.walk(event);
+        }
+      }
+      else if(event.attributes.result == "foul")
+      {
+        block.pitches.push("F");
+        if(this.counts.strikes<3 && event.attributes.advancesCount) {
+          this.counts.strikes++;
+          block.strikes = this.counts.strikes;
+        }
+      }
+      else if(event.attributes?.result!="ball_in_play")
+      {
+        if(event.attributes.advancesCount&&(this.counts.strikes<=2||event.attributes.result.indexOf("strike")>-1))
+        {
+          this.counts.strikes++;
+          block.pitches.push("S");
+          block.strikes = this.counts.strikes;
+        }
+        if(this.counts.strikes>=3)
+        {
+          if(event.attributes.result.indexOf("swinging")==-1)
+            event.playResult = "ꓘ";
+          else event.playResult = "K";
+          block.defense = event.playResult;
+          if(!event.attributes.playResult)
+            event.attributes.playResult = event.playResult;
+          this.out();
+          event.outs = this.counts.outs;
+          block.outs = event.outs;
+        }
+      }
+    }
+  }
+  handleBallInPlay(event) {
+    const tpos = event.home ? 1 : 0;
+    event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
+    const block = this.scorebook.getCurrentBlock(tpos, event.batterId);
+    block.playType = event.attributes.playType;
+    if(event.attributes.defenders?.length)
+      block.location = [
+        Math.round(event.attributes.defenders[0].location.x),
+        Math.round(event.attributes.defenders[0].location.y)
+      ];
+    switch(event.attributes.playResult)
+    {
+      case "batter_out_advance_runners":
+        this.out();
+        event.outs = this.counts.outs;
+        this.bases[0] = false;
+        let scored = false;
+        if(this.counts.outs<3)
+        {
+          if(this.bases[3])
+            scored = true;
+          this.advanceBases(event,1);
+        }
+        block.outs = event.outs;
+        if(event.shortResult)
+          event.shortResult += " | ";
+        else event.shortResult = "";
+        event.shortResult += this.getLongOuts();
+        block.defense = this.getOutCode(event);
+        break;
+      case "fielders_choice":
+        this.advanceBases(event);
+        this.advanceBase(0,event,1);
+        break;
+      case "other_out":
+      case "batter_out":
+      case "dropped_third_strike_batter_out":
+      case "offensive_interference":
+        this.out();
+        event.outs = this.counts.outs;
+        event.shortResult = this.getLongOuts();
+        block.defense = this.getOutCode(event);
+        block.outs = event.outs;
+        this.bases[0] = false;
+        break;
+      case "dropped_third_strike":
+        event.offense = "Kd3";
+        this.advanceBase(0,event);
+        break;
+      case "single":
+        event.offense = "1B";
+        this.advanceBases(event);
+        this.advanceBase(0,event,1);
+        break;
+      case "double":
+        event.offense = "2B";
+        this.advanceBases(event);
+        this.advanceBase(0,event);
+        this.advanceBases(event,1);
+        break;
+      case "triple":
+        event.offense = "3B";
+        this.advanceBases(event);
+        this.advanceBase(0,event);
+        this.advanceBases(event);
+        this.advanceBases(event,1);
+        break;
+      case "home_run":
+        event.offense = "HR";
+        this.advanceBases(event);
+        this.advanceBase(0,event);
+        this.advanceBases(event);
+        this.advanceBases(event);
+        this.advanceBases(event,1);
+        break;
+      default:
+        console.log(`New ball_in_play playResult: ${event.attributes.playResult}`);
+    }
+    if(event.defense)
+      block.defense = event.defense;
+    this.resetCount();
+    this.nextBatter(true);
+  }
+  handleBaseRunning(event) {
+    const tpos = event.home ? 1 : 0;
+    if(event.attributes.runnerId == this.lineup[tpos][this.currentBatter[tpos]])
+    {
+      if(event.attributes.base&&this.bases[event.attributes.base-1])
+        event.attributes.runnerId = this.bases[event.attributes.base-1];
+      else console.warn(`Still bad runner: ${event.attributes.runnerId}`, {event,bases:this.bases});
+    }
+    const block = this.scorebook.getCurrentBlock(tpos, event.attributes.runnerId);
+    switch(event.attributes.playType)
+    {
+      case 'stole_base':
+        event.offense = "SB";
+        break;
+      case 'wild_pitch':
+        event.offense = "WP";
+        break;
+      case 'passed_ball':
+        event.offense = "PB";
+        break;
+      case 'caught_stealing':
+        event.offense = "CS";
+        break;
+      case 'advanced_on_error':
+        event.offense = "E";
+        break;
+    }
+    switch(event.attributes.playType)
+    {
+      case 'advanced_on_last_play':
+      case 'other_advance':
+      case 'defensive_indifference':
+      case 'stole_base':
+      case 'wild_pitch':
+      case 'passed_ball':
+      case 'advanced_on_error':
+        this.advanceBase(event.attributes.base-1,event,1);
+        break;
+      case 'out_on_last_play':
+      case 'caught_stealing':
+        event.outs = ++this.counts.outs;
+        block.outs = event.outs;
+        block.bases[event.attributes.base-1] = "CS";
+        const lastEvent = this.events[this.events.length-1];
+        if(lastEvent?.shortResult)
+          lastEvent.shortResult = lastEvent.shortResult.replace("SAC","");
+        if(lastEvent?.offense)
+          lastEvent.offense = lastEvent.offense.replace("SAC","");
+        if(lastEvent?.defense)
+          lastEvent.defense = lastEvent.defense.replace("SAC","");
+        let defenders = "";
+        if(event.attributes?.defenders?.length)
+          defenders = this.getOutCode(event);
+        else if(lastEvent?.attributes?.defenders?.length)
+          event.offense = defenders = this.getOutCode(lastEvent);
+        if(defenders)
+            event.shortResult = (event.shortResult ? event.shortResult+" | ":"")
+        if(lastEvent?.attributes?.extendedPlayResult=="double_play")
+          event.shortResult += "DP";
+        if(defenders)
+          event.shortResult += defenders;
+        event.shortResult += " | " + this.getLongOuts();
+
+        let base = this.getRunnerBase(event.attributes.runnerId);
+        if(base===false&&typeof(event.attributes.base)!="undefined")
+          base = event.attributes.base;
+        // console.log(`Out on ${base}B: ${event.attributes.runnerId} => `+this.bases.join("->"));
+        this.bases[base] = false;
+        break;
+      case 'remained_on_last_play':
+        break;
+      default:
+        this.advanceBase(event.attributes.base-1,event,1);
+        console.warn(`New base_running playType: ${event.attributes.playType}`);
     }
   }
   getShortEvent(event) {
@@ -670,26 +677,27 @@ class game {
   }
   getShortPlayResult(event, defenders) {
     if(!event.playResult) return "";
+    const block = this.scorebook.getCurrentBlock(this.ballSide, event.batterId);
     switch (event.playResult)
     {
       case "double_play":
         return "DP";
       case "home_run":
-        this.scorebook[this.ballSide][this.inning][event.batterId].offense = "HR";
+        block.offense = "HR";
         return event.offense = "HR";
       case "triple":
-        this.scorebook[this.ballSide][this.inning][event.batterId].offense = "3B";
+        block.offense = "3B";
         return event.offense = "3B";
       case "double":
-        this.scorebook[this.ballSide][this.inning][event.batterId].offense = "2B";
+        block.offense = "2B";
         return event.offense = "2B";
       case "single":
-        this.scorebook[this.ballSide][this.inning][event.batterId].offense = "1B";
+        block.offense = "1B";
         return event.offense = "1B";
       case "CI":
       case "HP":
       case "BB":
-        this.scorebook[this.ballSide][this.inning][event.batterId].offense = event.playResult;
+        block.offense = event.playResult;
         event.offense = event.playResult;
         return event.playResult;
       case "batter_out":
@@ -753,10 +761,11 @@ class game {
       if(playerInLineup)
         return this.setBatter(playerInLineup);
       else {
-        // console.warn(`Bad batter (${this.currentBatter[this.ballSide]})`);
+        console.warn(`Bad batter (${this.currentBatter[this.ballSide]})`);
         return false;
       }
     }
+    this.scorebook.batterUp(this.ballSide, playerId);
     const player = this.findPlayer(playerId);
     if(player?.long_name)
       this.batterUp = player.long_name;
@@ -764,104 +773,6 @@ class game {
       this.batterUp = player.first_name;
     else
       this.batterUp = `Batter #${this.currentBatter[this.ballSide]+1}`;
-  }
-  getScoreHTML(block) {
-    var marks = "";
-    let pspot = [0,0];
-    if(block.pitches.length)
-      block.pitches.forEach((pitch,num)=>{
-        let y = 81.383;
-        let xi = 0;
-        if(pitch=="B")
-        {
-          y = 89.167;
-          xi = pspot[1]++;
-          if(xi>=3) return;
-        } else {
-          xi = pspot[0]++;
-          if(xi>=2) return;
-        }
-        let x = 93 - (xi * 7.784);
-        marks += `<text xml:space="preserve" x="${x}" y="${y}" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;" x="${x}" y="${y}">${num+1}</tspan></text>`;
-      });
-    else {
-      for(var ball=0;ball<Math.min(3,block.balls);ball++)
-      {
-        const x = 98 - ball * 7;
-        const y = 82;
-        marks += `
-          <path style="fill:none;stroke:#000;stroke-width:1.2;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;stroke-linecap:round" d="m${x} ${y}-6.362 7.23" transform="translate(-13.749 -30.811)"/>
-          `;
-      }
-      for(var strike=0;strike<Math.min(2,block.strikes);strike++)
-      {
-        const x = 98 - strike * 7;
-        const y = 75;
-        marks += `
-          <path style="fill:none;stroke:#000;stroke-width:1.2;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;stroke-linecap:round" d="m${x} ${y}-6.362 7.23" transform="translate(-13.749 -30.811)"/>
-          `;
-      }
-    }
-    const base1 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15" transform="translate(-13.749 -30.811)"/>`;
-    const base2 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15" transform="translate(-13.749 -30.811)"/>`;
-    const base3 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15-15 15" transform="translate(-13.749 -30.811)"/>`;
-    const base4 = `<path style="fill:#4d4d4d;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15-15 15 15 15z" transform="translate(-13.749 -30.811)"/>`;
-    if(block.offense=="BB")
-      marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -30.811)"/>`;
-    if(block.offense=="1B")
-      marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -19.811)"/>`;
-    if(block.offense=="2B")
-      marks += `${base2}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -8.811)"/>`;
-    if(block.offense=="3B")
-      marks += `${base3}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 2.189)"/>`;
-    if(block.offense=="HR")
-      marks += `${base4}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 13.189)"/>`;
-    else if(!!block.runs)
-    	marks += `${base4}`;
-    else if(block.bases?.length==3)
-    	marks += `${base3}`;
-    else if(block.bases?.length==2)
-    	marks += `${base2}`;
-    if(block.bases?.length>1&&!!block.bases[0])
-    	marks += `<text xml:space="preserve" x="67" y="84" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="67" y="84">${block.bases[0]}</tspan></text>`;
- 		if(block.bases?.length>2&&!!block.bases[1])
- 			marks += `<text xml:space="preserve" x="67" y="60" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="67" y="60">${block.bases[1]}</tspan></text>`;
- 		if(block.bases?.length>3&&!!block.bases[2])
- 			marks += `<text xml:space="preserve" x="42" y="60" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="42" y="60">${block.bases[2]}</tspan></text>`;
- 		if(block.bases?.length>=4&&!!block.bases[3])
- 			marks += `<text xml:space="preserve" x="42" y="84" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="42" y="84">${block.bases[3]}</tspan></text>`;
- 			
-    if(block.location)
-    {
-      marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85`;
-      if(block.playType&&block.playType.indexOf("fly")>-1)
-        marks += `c6-13 5.744-25.112`;
-      marks += " " + (block.location[0]-160)/7;
-      marks += " " + (340-block.location[1])/-7;
-      marks += `" transform="translate(-13.749 -30.811)"/>
-      `;
-    }
-    if(block.outs)
-    {
-    	marks += `<text xml:space="preserve" x="88" y="43.8" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#f00;stroke:none;text-align:center;" x="88" y="43.8">${block.outs}</tspan></text>`;
-    	marks += `<path style="fill:none;stroke:red;stroke-width:1.2;stroke-linecap:round" d="M96 30a6 6 0 0 1-6 6 6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6z" transform="translate(-13.749 -19.811)"/>`;
-    }
-    marks = `<svg width="162" height="112" viewBox="0 0 85.713 59.396" xmlns="http://www.w3.org/2000/svg">
-        <path style="fill:none;stroke:#1a1a1a;stroke-width:.237034" d="M13.867 30.93h85.476v59.159H13.867z" transform="translate(-13 -30.811)"/>
-        <path style="fill:none;stroke:#333;stroke-width:.264583;stroke-dasharray:1.5875,1.5875;stroke-dashoffset:0" d="m43.572 68.065 15.54-15.542 15.542 15.542-15.541 15.54z" transform="translate(-13 -28.894)"/>
-        <path style="fill:none;stroke:#333;stroke-width:.27213;stroke-dasharray:1.63278,1.63278;stroke-dashoffset:0" d="M43.48 67.968 29.637 54.124" transform="translate(-13 -28.894)"/>
-        <path style="fill:none;stroke:#333;stroke-width:.274281;stroke-dasharray:1.64569,1.64569;stroke-dashoffset:0" d="M74.654 68.065 88.5 54.22" transform="translate(-13 -28.894)"/>
-        <path style="fill:none;stroke:#333;stroke-width:.264583;stroke-dasharray:1.5875,1.5875;stroke-dashoffset:0" d="M29.636 54.124S36.72 33.772 59.052 33.71C82.34 33.646 88.5 54.22 88.5 54.22" transform="translate(-13 -28.894)"/>
-        <path style="fill:none;stroke:#333;stroke-width:.305288;stroke-dasharray:1.83173,1.83173;stroke-dashoffset:0" d="M84.044 82.423V74.79h7.633M76.26 90.207v-7.632h7.632M84.044 90.207v-7.632h7.633M91.83 90.207v-7.632h7.632M91.83 82.423V74.79h7.632" transform="translate(-13.749 -30.811)"/>
-        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.856" y="41.065" transform="translate(-13 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.856" y="41.065">BB</tspan></text>
-        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.731" y="52.037" transform="translate(-13 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.731" y="52.037">1B</tspan></text>
-        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="22.008" y="63.009" transform="translate(-13 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="22.008" y="63.009">2B</tspan></text>
-        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.967" y="73.981" transform="translate(-13 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.967" y="73.981">3B</tspan></text>
-        <text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.05556px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:gray;stroke:none;stroke-width:.264583" x="21.689" y="85.022" transform="translate(-13 -30.811)"><tspan style="fill:gray;stroke-width:.264583" x="21.689" y="85.022">HR</tspan></text>
-        ${marks}
-      </svg>`;
-    // return marks;
-    return marks;
   }
   findPlayer(id)
   {
