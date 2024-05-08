@@ -2,8 +2,7 @@
  * Set constants from environment variables
  *
  * @constant  {number}  PORT          The port Express will be using
- * @constant  {string}  ENDPOINT      Our Shopify Admin API endpoint URL
- * @constant  {string}  ACCESS_TOKEN  Our private app access token, for authentication
+ * @constant  {string}  REDIS_URL     Redis connection string for cache
  */
 
 const fs = require('fs');

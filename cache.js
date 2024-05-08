@@ -1,6 +1,7 @@
 const Db = require('./db');
 const db = new Db('Cache redis');
 
+
 class Cache {
   constructor(req,res)
   {
@@ -100,7 +101,9 @@ class Cache {
       if(typeof(field)!="string") field = JSON.stringify(field);
       const client = this.getClient(false);
 			if(!client&&!!this.res) {
-        if(field.indexOf("token")>-1)
+        if(!!this.req.session)
+          this.req.session[`${key}_${field}`] = setting
+        else if(field.indexOf("token")>-1)
           this.res.cookie(`${key}_${field}`, setting);
         return resolve(1);
       }
@@ -116,8 +119,12 @@ class Cache {
   hget(key,field)
   {
   	const client = this.getClient(false);
-    if(!client&&!!this.req&&this.req.cookies[`${key}_${field}`]) {
-      return this.req.cookies[`${key}_${field}`];
+    if(!client&&!!this.req)
+    {
+      if(this.req.session&&this.req.session[`${key}_${field}`])
+          return this.req.session[`${key}_${field}`];
+      if(this.req.cookies[`${key}_${field}`])
+        return this.req.cookies[`${key}_${field}`];
     }
   	if(!client) return undefined;
     return client.hGet(key,field);
@@ -137,10 +144,13 @@ class Cache {
   hdel(key,field)
   {
     const client = this.getClient(false);
+    const path = `${key}_${field}`;
+    if(!!this.req.session)
+      this.req.session[path] = undefined;
+    if(!!this.req.cookies[path])
+      this.res.cookie(path, null, {expires:new Date(Date.now()-10)});
     if(!!client)
       return this.getClient(false).hDel(key,field);
-    else if(!!this.res)
-      this.res.cookie(`${key}_${field}`, null, {expires:new Date(Date.now()-10)});
   }
   hincr(key,field)
   {
