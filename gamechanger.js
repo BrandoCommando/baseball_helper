@@ -13,8 +13,10 @@ class gamechanger {
     this.signKey = "2l2hSBkHeJP3xv2BtC7qpZ6wYoOL7xAJK2NxvfVSyyI=";
     this.lastSignature = false;
     this.token = false;
-    this.scorebook = new ScoreBook();
     this.cache = cache;
+    this.players = {};
+    this.teams = {};
+    this.games = [];
   }
   flatten(e) {
     if(Array.isArray(e))
@@ -43,7 +45,7 @@ class gamechanger {
       previousSignature && (h.update("|"), h.update(CryptoJS.enc.Base64.parse(previousSignature))),
       CryptoJS.enc.Base64.stringify(h.finalize())
   }
-  async fetchApi(post, action) {
+  async fetchApi(post, action, oheaders) {
     if(!this.token) await this.getToken();
     if(!action) action = "auth";
     if(action!="auth"&&!this.token)
@@ -89,6 +91,10 @@ class gamechanger {
           headers["gc-token"] = this.token.access.data;
       }
     }
+    if(!!oheaders)
+      Object.keys(oheaders).forEach((key)=>{
+        headers[key] = oheaders[key];
+      });
     // if(action != "auth")
     //   headers['accept'] = 'application/vnd.gc.com.user+json; version=0.1.0';
     const method = post ? "POST" : "GET";
@@ -109,7 +115,7 @@ class gamechanger {
     this.requests.push({request:action,post,response:result});
     return result;
   }
-  async getApi(action,nocache)
+  async getApi(action,nocache,headers)
   {
     return new Promise(async(resolve,reject)=>{
       let data = false;
@@ -127,7 +133,7 @@ class gamechanger {
         } else if(typeof at == "object")
           return resolve(data);
       }
-      data = await this.fetchApi(false, action);
+      data = await this.fetchApi(false, action, headers);
       if(!!this.cache&&!nocache&&!!data)
       {
         await this.cache.hset("gamechanger", action + (action.indexOf("me/")>-1 ? this.email : ""), JSON.stringify(data)).catch();
@@ -232,11 +238,8 @@ class gamechanger {
     {
       if(!team.name)
       {
-        await this.getApi(`teams/${team.id}`).then((out)=>{
-          if(out.name)
-            team.name = out.name;
-          else console.warn("Could not find name", {team,out});
-        });
+        team.name = await this.getApi(`teams/${team.id}`)
+          .then((out)=>out.name);
       }
       if(!team.players?.length)
         team.players = await this.loadPlayers(team.id);
@@ -267,7 +270,7 @@ class gamechanger {
       await this.loadPlayers(team);
       game.setMyTeam(team);
     }
-    if(game.game_stream.opponent_id)
+    if(game?.game_stream?.opponent_id&&!game.hasOtherTeam())
     {
       const oppo = {id:game.game_stream.opponent_id};
       if(game.event?.pregame_data?.opponent_name)
@@ -276,12 +279,14 @@ class gamechanger {
       game.setOtherTeam(oppo);
     }
     // await this.getApi(`teams/${team.id}/schedule/events/${game.event_id}/simple-scorekeeping/game-data`);
-    const plays = await this.getApi(`game-streams/${game.game_stream.id}/events`,true);
-    if(plays.length)
-      for(var pi=0;pi<plays.length;pi++)
-        if(typeof plays[pi].event_data == "string")
-          plays[pi].event_data = JSON.parse(plays[pi].event_data)
-    game.processEvent(plays);
+    if(game.game_stream?.id) {
+      const plays = await this.getApi(`game-streams/${game.game_stream.id}/events`,true);
+      if(plays.length)
+        for(var pi=0;pi<plays.length;pi++)
+          if(typeof plays[pi].event_data == "string")
+            plays[pi].event_data = JSON.parse(plays[pi].event_data)
+      game.processEvent(plays);
+    }
     if(!game.teams[0].players)
       await this.loadPlayers(game.teams[0]);
     if(!game.teams[1].players)
@@ -291,64 +296,76 @@ class gamechanger {
     await this.getToken();
     this.user = await this.getApi("me/user", true);
     if(!this.user.id) return false;
-    this.players = {};
     this.games = [];
+    this.teams = {};
     const promises = [];
     const teams = await this.getApi("me/teams?include=user_team_associations", true);
     if(!teams) return false;
-    this.teams = Object.values(teams).reduce((arr,team)=>{
-      const t = new Team(team);
-      arr.push(t);
-      return arr;
-    },[]);
-    for(var index=0;index<this.teams.length;index++)
-    {
-      const team = new Team(this.teams[index]);
-      if(!team.id)
+    teams.sort((a,b)=>{
+      if(a.created_at&&b.created_at)
       {
-        console.error("No team id", team);
+        const da = Date.parse(a.created_at);
+        const db = Date.parse(b.created_at);
+        if(da < db) return 1;
+        if(da > db) return -1;
+        return 0;
       }
-      // console.log(`Loading team`,team);
-      await this.loadPlayers(team);
-      // await this.getApi(`teams/${team.id}`);
-      team.schedule = await this.getApi(`teams/${team.id}/schedule/?fetch_place_details=true`);
-      const games = await this.getApi(`teams/${team.id}/game-summaries`,true);
-      if(games.length&&!games[0].id&&games[0].length&&games[0][0].id)
-        games = games[0];
-      if(games.length)
-        for(var si=0;si<games.length;si++)
-        {
-          const game = new Game(games[si],this.findData,team);
-          game.event = team.schedule.find((rec)=>rec.event?.id==game.event_id);
-          // if(game.event_id)
-          //   game.event = await this.getApi(`events/${game.event_id}`);
-          // if(game.game_status==="live"&&game.game_stream?.id)
-          // {
-          //   await this.loadGameData(game, team);
-          // } else if(game.game_status!=="completed")
-          //   console.warn(`Other status: ${game.game_status}`);
-          game.setMyTeam({id:this.teams[index].id,name:this.teams[index].name,players:team.players});
-          const oppo = {};
-          if(game.event?.pregame_data?.opponent_name)
-          {
-            oppo.id = game.event.pregame_data.opponent_id;
-            oppo.name = game.event.pregame_data.opponent_name;
-          } 
-          if(game.event_stream?.opponent_id)
-            oppo.id = game.event_stream.opponent_id;
-          if(oppo.id)
-          {
-            // oppo.players = await this.getApi(`teams/${oppo.id}/players`);
-            // console.log("Oppo", oppo);
-            game.setOtherTeam(oppo);
-          }
-          team.addGame(game);
-          this.games.push(game);
-        }
-      this.teams[index] = team;
+    });
+    for(var index=0;index<teams.length;index++)
+    {
+      const team_id = teams[index].id;
+      const team = new Team(teams[index]);
+      this.teams[team_id] = team;
+      promises.push(this.getApi(`teams/${team_id}/schedule/?fetch_place_details=true`,true).then((schedule)=>{
+        this.teams[team_id].schedule = schedule;
+      }));
     }
+    await Promise.all(promises);
+    promises.splice(0,promises.length);
+    for(var index=0;index<teams.length;index++)
+    {
+      const team_id = teams[index].id;
+      const team = new Team(teams[index]);
+      promises.push(this.getApi(`teams/${team_id}/game-summaries`,true).then((games)=>{
+        if(games.length)
+          for(var gi=0;gi<games.length;gi++)
+          {
+            const game = new Game(games[gi],this.findData,this.teams[team_id]);
+            game.event = this.teams[team_id].schedule?.find((rec)=>rec.event?.id==game.id);
+            // if(game.event_id)
+            //   game.event = await this.getApi(`events/${game.event_id}`);
+            // if(game.game_status==="live"&&game.game_stream?.id)
+            // {
+            //   await this.loadGameData(game, team);
+            // } else if(game.game_status!=="completed")
+            //   console.warn(`Other status: ${game.game_status}`);
+            game.setMyTeam(team);
+            const oppo = {};
+            if(game.event?.pregame_data?.opponent_name)
+            {
+              oppo.id = game.event.pregame_data.opponent_id;
+              oppo.name = game.event.pregame_data.opponent_name;
+            } else console.warn("no oppo?", game.event);
+            if(game.event_stream?.opponent_id)
+              oppo.id = game.event_stream.opponent_id;
+            if(oppo.id)
+            {
+              // oppo.players = await this.getApi(`teams/${oppo.id}/players`);
+              // console.log("Oppo", oppo);
+              game.setOtherTeam(oppo);
+            }
+            if(!game.teams[0].id)
+              game.teams[0] = {id:team.id, name:team.name, players:team.players};
+            else if(!game.teams[1].id)
+              game.teams[1] = {id:team.id, name:team.name, players:team.players};
+            this.teams[team_id].addGame(game);
+            this.games.push(game);
+          }
+        }));
+    }
+    await Promise.all(promises);
     this.games.sort((a,b)=>{
-      if(a.event?.event?.start?.datetime)
+      if(a.event?.event?.start?.datetime&&b.event?.event?.start?.datetime)
       {
         const da = Date.parse(a.event.event.start.datetime);
         const db = Date.parse(b.event.event.start.datetime);
@@ -360,38 +377,56 @@ class gamechanger {
   }
   async handleReq(req,res) {
     const gc = this;
-    await gc.loadData();
-    let out = gc;
+    let out = false;
+    var team = false;
     if(req.query?.game)
     {
-      const game = out.games.find((g)=>g.event_id==req.query.game);
-      var team = false;
-      if(!!game)
+      const event = await this.getApi(`events/${req.query.game}`);
+      if(event?.event?.team_id)
       {
-        if(!game.event&&game.event_id)
-          game.event = await this.fetchApi(`events/${game.event_id}`);
-        if(game.game_stream?.opponent_id)
-        {
-          const oppo = {id:game.game_status.opponent_id};
-          const ourId = game.teams.find((t)=>{
-            if(typeof(t)=="string"&&t!=oppo.Id)
-              return t;
-            return false;
+        team = new Team(await this.getApi(`teams/${event.event.team_id}`));
+        this.teams[team.id] = team;
+      }
+      const game = new Game({event},this.findData,team);
+      if(game.event?.event?.id)
+      {
+        const summary = await this.getApi(`teams/${game.event.event.team_id}/game-summaries/${game.event.event.id}`);
+        if(summary.game_stream)
+          Object.keys(summary).forEach((key)=>{
+            game[key] = summary[key];
           });
-          if(game.event?.pregame_data?.opponent_name)
-            oppo.name = game.event.pregame_data.opponent_name;
-          await this.loadPlayers(oppo);
-          game.setOtherTeam(oppo);
-          if(ourId)
-          {
-            team = {id:ourId};
-            await this.loadPlayers(team);
-            game.setMyTeam(team);
-          }
+      }
+
+      if(!!game?.event)
+      {
+        let oppo = {};
+        if(game.event?.pregame_data?.opponent_name)
+          oppo = {id: game.event.pregame_data.opponent_id, name: game.event.pregame_data.opponent_name};
+        else if(game.game_stream?.opponent_id)
+        {
+          oppo.id = game.game_status.opponent_id;
+        }
+        const ourId = game.teams.find((t)=>{
+          if(typeof(t)=="string"&&t!=oppo.Id)
+            return t;
+          return false;
+        });
+        oppo = await this.loadPlayers(oppo);
+        game.setOtherTeam(oppo);
+        if(ourId)
+        {
+          team = {id:ourId};
+          await this.loadPlayers(team);
+          game.setMyTeam(team);
         }
         await this.loadGameData(game, team);
-        out = game;
+        this.games.push(game);
+        out = this;
       }
+    }
+    if(!out) {
+      await this.loadData();
+      out = this;
     }
     if(req.query?.format?.indexOf("json")>-1)
       res.send(out);
@@ -430,7 +465,7 @@ class gamechanger {
             res.write(`<table border=1>
               <thead><tr><td width="200">Player</td>`);
             book.columns.forEach((col)=>{
-              if(!Object.values(col.plays).find((play)=>play.pitches.length)) return;
+              if(!Object.values(col.plays).find((play)=>play.playType||play.pitches.length)) return;
               res.write(`<td>${col.inning}</td>`);
             });
             res.write("</tr>\n");
@@ -451,10 +486,10 @@ class gamechanger {
               res.write(`
                 <tr><td>${player}</td>`);
               book.columns.forEach((col)=>{
-                if(!Object.values(col.plays).find((play)=>play.pitches.length)) return;
+                if(!Object.values(col.plays).find((play)=>play.playType||play.pitches.length)) return;
                 const block = col.plays[playerId];
                 res.write(`<td>`);
-                if(block)
+                if(block?.playType||block?.pitches?.length)
                 {
                   res.write(`<div class="toggleNext">`);
                   res.write(ScoreBook.getScoreHTML(block));
@@ -472,20 +507,6 @@ class gamechanger {
       res.header("Content-Type", "text/html");
       res.write("<html><head><title>"+gc.email+"</title></head><body>");
       const suffix = req.query.user ? `&user=${req.query.user}` : "";
-      if(out.games)
-        out.games.forEach((game)=>{
-          const t1 = game.teams[0];
-          const t2 = game.teams[1];
-          if(!game.events?.length) {
-            res.write(`<a href="?game=${game.event_id}${suffix}">${t1.name} vs ${t2.name}</a><br>`);
-            return;
-          }
-          res.write("<table border=1>");
-          res.write("<caption>" + t1.name + " vs " + t2.name + "</caption>");
-          game.events.forEach(writeEventHTML);
-          res.write("</table>");
-          writeScorebook(game);
-        });
       if(out.events)
       {
         res.write("<table border=1>");
@@ -495,6 +516,27 @@ class gamechanger {
         res.write("</table>");
         writeScorebook(out);
       }
+      if(gc.games)
+        gc.games.forEach((game)=>{
+          const t1 = game.teams[0];
+          const t2 = game.teams[1];
+          if(!game.events?.length) {
+            res.write(`<a href="?game=${game.event_id}${suffix}">`);
+            if(game.home_away == "home")
+              res.write(`${game.getMyTeam().name} (${game.owning_team_score}) @ ${game.getOtherTeam().name} (${game.opponent_team_score}) ${game.last_scoring_update}`);
+            else
+              res.write(`${game.getMyTeam().name} (${game.owning_team_score}) vs ${game.getOtherTeam().name} (${game.opponent_team_score}) ${game.last_scoring_update}`);
+            
+            res.write(`</a><br>`);
+            return;
+          }
+          if(out.events) return;
+          res.write("<table border=1>");
+          res.write("<caption>" + t1.name + " vs " + t2.name + "</caption>");
+          game.events.forEach(writeEventHTML);
+          res.write("</table>");
+          writeScorebook(game);
+        });
 
       res.write(`<style type="text/css">
         .hidden{display:none}

@@ -76,7 +76,8 @@ class scorebook {
       book.columns[this.currentColumn[home]] = { inning: this.currentInning, plays: {} };
     if(book.columns[this.currentColumn[home]].plays[playerId])
     {
-      if(Object.values(book.columns[this.currentColumn[home]].plays).find((col)=>col.pitches?.length>0))
+      const plays = Object.values(book.columns[this.currentColumn[home]].plays);
+      if(plays.filter((block)=>block.playType||block?.pitches?.length).length>1)
       {
         this.currentColumn[home]++;
         console.log("Extra inning column", {col: this.currentColumn[home], inn: this.currentInning});
@@ -142,13 +143,14 @@ class scorebook {
           `;
       }
     }
+    const outCodes = ["CS","FC","DP","PO"];
     const base1 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15" transform="translate(-13.749 -30.811)"/>`;
     const base2 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15" transform="translate(-13.749 -30.811)"/>`;
     const base3 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15-15 15" transform="translate(-13.749 -30.811)"/>`;
-    const base4 = `<path style="fill:#4d4d4d;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15-15 15 15 15z" transform="translate(-13.749 -30.811)"/>`;
+    const base4 = `<path style="fill:#006252;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 15-15-15-15-15 15 15 15z" transform="translate(-13.749 -30.811)"/>`;
     if(block.offense=="BB")
       marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -30.811)"/>`;
-    if(block.offense=="1B")
+    if(block.offense=="1B"||block.offense=="FC")
       marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -19.811)"/>`;
     if(block.offense=="2B")
       marks += `${base2}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -8.811)"/>`;
@@ -158,19 +160,19 @@ class scorebook {
       marks += `${base4}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 13.189)"/>`;
     else if(!!block.runs)
     	marks += `${base4}`;
-    else if(block.bases?.length>=3&&block.bases[2]!="CS")
+    else if(block.bases?.length>=3&&outCodes.indexOf(block.bases[2])==-1)
     	marks += `${base3}`;
-    else if(block.bases?.length>=2&&block.bases[1]!="CS")
+    else if(block.bases?.length>=2&&outCodes.indexOf(block.bases[1])==-1)
     	marks += `${base2}`;
     if(!!block.bases[0])
-    	marks += `<text xml:space="preserve" x="67" y="84" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="67" y="84">${block.bases[0]}</tspan></text>`;
+    	marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="-5" y="110" transform="rotate(-45 -44.067 1.19)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="-5" y="110">${block.bases[0]}</tspan></text>`;
  		if(!!block.bases[1])
     {
- 			marks += `<text xml:space="preserve" x="67" y="60" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="67" y="60">${block.bases[1]}</tspan></text>`;
-      if(block.bases[1]=="CS")
+ 			marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="92.23" y="-4.87" transform="rotate(45 30.318 -32)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="92.23" y="-4.88">${block.bases[1]}</tspan></text>`;
+      if(outCodes.indexOf(block.bases[1])>-1)
         marks += `<path
             style="fill:none;stroke:#000000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
-            d="m 74.654133,69.981963 -7.7706,-7.770601"
+            d="m 75,70 -7.7706,-7.770601"
             transform="translate(-13.749 -30.811)"
             />
           <path
@@ -181,25 +183,42 @@ class scorebook {
     }
  		if(!!block.bases[2])
     {
- 			marks += `${base1}<text xml:space="preserve" x="42" y="60" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="42" y="60">${block.bases[2]}</tspan></text>`;
-      if(block.bases[2]=="CS")
+ 			marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="-6" y="80" transform="rotate(-45 -44.067 1.19)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="-6" y="80">${block.bases[2]}</tspan></text>`;
+      if(outCodes.indexOf(block.bases[2])>-1)
         marks += `<path
             style="fill:none;stroke:#000000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
-            d="m59.113 54.44-7.77 7.771M50.371 61.24l1.943 1.943"
-            transform="translate(-13 -30.811)"
+            d="m60 55-7.77 7.771M51 62l1.943 1.943"
+            transform="translate(-13.749 -30.811)"
             />`;
+      else
+        marks += base1;
     }
  		if(!!block.bases[3])
- 			marks += `<text xml:space="preserve" x="42" y="84" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;text-align:center;" x="42" y="84">${block.bases[3]}</tspan></text>`;
+    {
+ 			marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="92.23" y="25" transform="rotate(45 30.318 -32)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="91.31" y="25">${block.bases[3]}</tspan></text>`;
+      if(outCodes.indexOf(block.bases[3])>-1||block.outs)
+        marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m45 70 7.725 7.816M52 78.763l1.954-1.931" transform="translate(-13.749 -30.811)"/>`
+    }
  			
     if(block.location)
     {
-      marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85`;
+      let stroke = "none";
+      if(block.playType=="ground_ball")
+        stroke = "1.2,2.4"
+      marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:${stroke};stroke-dashoffset:0;stroke-opacity:1" d="m60 85`;
+      let x2 = (block.location[0]-160)/7;
+      let y2 = (340-block.location[1])/-7
       if(block.playType&&block.playType.indexOf("fly")>-1)
-        marks += `c6-13 5.744-25.112`;
-      marks += " " + (block.location[0]-160)/7;
-      marks += " " + (340-block.location[1])/-7;
-      marks += `" transform="translate(-13.749 -30.811)"/>
+      {
+        let dx1 = 6, dx2 = 6;
+        let dy1 = -6, dy2 = y2;
+        if(block.location[0]>160)
+        {
+          dx1 = dx2 = -6;
+        }
+        marks += `c ${dx1} ${dy1}, ${dx2} ${dy2}`;
+      }
+      marks += ` ${x2} ${y2}" transform="translate(-13.749 -30.811)"/>`;`
       `;
     }
     if(block.outs)
@@ -207,7 +226,7 @@ class scorebook {
     	marks += `<text xml:space="preserve" x="88" y="43.8" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#f00;stroke:none;text-align:center;" x="88" y="43.8">${block.outs}</tspan></text>`;
     	marks += `<path style="fill:none;stroke:red;stroke-width:1.2;stroke-linecap:round" d="M96 30a6 6 0 0 1-6 6 6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6z" transform="translate(-13.749 -19.811)"/>`;
       if(block.defense)
-        marks += `<text xml:space="preserve" style="font-weight:700;font-size:19px;font-family:Arial;text-align:center;text-anchor:middle;fill:red;stroke:none;" x="58.401" y="77.045" transform="translate(-13 -30.811)"><tspan style="font-size:19px;fill:red;text-align:center;stroke:none;" x="58.401" y="77.045">${block.defense}</tspan></text>`;
+        marks += `<text xml:space="preserve" style="font-weight:700;font-size:19px;font-family:Arial;text-align:center;text-anchor:middle;fill:red;stroke:none;" x="60" y="62" transform="translate(-13.749 -30.811)"><tspan style="font-size:19px;fill:red;text-align:center;stroke:none;" x="60" y="62">${block.defense}</tspan></text>`;
     }
     marks = `<svg width="162" height="112" viewBox="0 0 85.713 59.396" xmlns="http://www.w3.org/2000/svg">
         <path style="fill:none;stroke:#1a1a1a;stroke-width:.237034" d="M13.867 30.93h85.476v59.159H13.867z" transform="translate(-13 -30.811)"/>
