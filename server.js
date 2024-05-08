@@ -5,13 +5,13 @@ const { GameChanger } = require('./gamechanger');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const Cache = require('./cache');
-const cache = new Cache();
 
 app.use(cookieParser());
 app.use(bodyParser.json({limit:'2mb',verify:(req,res,buf,enc)=>{if(buf&&buf.length) req.rawBody = buf.toString(enc||'utf8');}}));
 app.use(express.urlencoded({extended:true}));
 
 app.get('/', async(req,res)=>{
+  const cache = new Cache(req,res);
   if(req.cookies?.gc_email)
   {
     const gc = new GameChanger(req.cookies.gc_email, null, cache);
@@ -40,6 +40,7 @@ app.get('/', async(req,res)=>{
   });
 
 app.post('/login', async(req,res)=>{
+  const cache = new Cache(req, res);
   if(req.body.user&&req.body.pass)
   {
     res.cookie("gc_email", req.body.user);
@@ -50,14 +51,17 @@ app.post('/login', async(req,res)=>{
   res.redirect("/");
 });
 app.get('/logout', async(req,res)=>{
+  const cache = new Cache(req, res);
   await cache.hdel("gamechanger", req.cookies.gc_email + "_access_token");
   res.redirect("/");
 });
   
 app.get('/keys', async(req,res)=>{
+  const cache = new Cache(req, res);
 	res.send({keys:await cache.hkeys("gamechanger")});
 });
 app.get('/dump', async(req,res)=>{
+  const cache = new Cache(req, res);
 	res.send(await cache.hgetall("gamechanger"));
 });
 

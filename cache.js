@@ -2,27 +2,31 @@ const Db = require('./db');
 const db = new Db('Cache redis');
 
 class Cache {
-  constructor()
+  constructor(req,res)
   {
     this.cache = {};
     this.connected = false;
     this.client = false;
+    this.req = req;
+    this.res = res;
   }
   getClient(skip_connect)
   {
     if(!this.client||!this.connected)
     {
       const client = db.createClient();
-      client.on('error', (e) => {
-        this.connected = false;
-      });
-      client.on('ready', () => {
-        this.connected = true;
-      });
+      if(!!client) {
+				client.on('error', (e) => {
+					this.connected = false;
+				});
+				client.on('ready', () => {
+					this.connected = true;
+				});
+			}
       this.client = client;
     }
 //     client.on('ready', () => console.log('Redis connected'));
-    if(!skip_connect&&!this.connected)
+    if(!skip_connect&&!this.connected&&!!this.client)
     {
       this.client.connect();
     }
@@ -94,7 +98,13 @@ class Cache {
       if(typeof(val)!="string") setting = JSON.stringify(val);
       if(typeof(key)!="string") key = JSON.stringify(key);
       if(typeof(field)!="string") field = JSON.stringify(field);
-      this.getClient(false).sendCommand(['hset',key,field,setting])
+      const client = this.getClient(false);
+			if(!client&&!!this.res) {
+        if(field.indexOf("token")>-1)
+          this.res.cookie(`${key}_${field}`, setting);
+        return resolve(1);
+      }
+			return client.sendCommand(['hset',key,field,setting])
         .then((res)=>resolve(res))
         .catch((e)=>reject(e));
       });
@@ -105,7 +115,12 @@ class Cache {
   }
   hget(key,field)
   {
-    return this.getClient(false).hGet(key,field);
+  	const client = this.getClient(false);
+    if(!client&&!!this.req&&this.req.cookies[`${key}_${field}`]) {
+      return this.req.cookies[`${key}_${field}`];
+    }
+  	if(!client) return undefined;
+    return client.hGet(key,field);
   }
   hgetall(key)
   {
@@ -121,7 +136,11 @@ class Cache {
   }
   hdel(key,field)
   {
-    return this.getClient(false).hDel(key,field);
+    const client = this.getClient(false);
+    if(!!client)
+      return this.getClient(false).hDel(key,field);
+    else if(!!this.res)
+      this.res.cookie(`${key}_${field}`, null, {expires:new Date(Date.now()-10)});
   }
   hincr(key,field)
   {

@@ -119,7 +119,7 @@ class gamechanger {
   {
     return new Promise(async(resolve,reject)=>{
       let data = false;
-      if(!!this.cache&&!nocache)
+      if(!!this.cache?.client&&!nocache)
       {
         data = await this.cache.hget("gamechanger", action + (action.indexOf("me/")>-1 ? this.email : "")).catch();
         if(typeof data == "string" && data.length >= 2)
@@ -134,7 +134,7 @@ class gamechanger {
           return resolve(data);
       }
       data = await this.fetchApi(false, action, headers);
-      if(!!this.cache&&!nocache&&!!data)
+      if(!!this.cache&&!nocache&&!!data&&!!this.cache.client)
       {
         await this.cache.hset("gamechanger", action + (action.indexOf("me/")>-1 ? this.email : ""), JSON.stringify(data)).catch();
       }
@@ -158,7 +158,8 @@ class gamechanger {
     {
       access_token.access.expiry = new Date(access_token.access.expires*1000);
       access_token.refresh.expiry = new Date(access_token.refresh.expires*1000);
-      await this.cache.hset("gamechanger", this.email + "_access_token", JSON.stringify(access_token)).catch();
+      if(!!this.cache?.client)
+	      await this.cache.hset("gamechanger", this.email + "_access_token", JSON.stringify(access_token)).catch();
       this.token = access_token;
       return this.token;
     }

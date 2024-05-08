@@ -16,6 +16,7 @@ class Db {
   }
   createClient() { return this.createClient(false); }
   createClient(connect) {
+  	if(!this.opts.url) return false;
     const client = redis.createClient(this.opts);
     client.on('ready',()=>{
       console.log(`${this.name} connected: ${REDIS_URL}`);
