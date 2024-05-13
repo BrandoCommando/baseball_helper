@@ -1,7 +1,7 @@
 const CryptoJS = require("crypto-js");
 const bcrypt = require("bcrypt");
 const fetch = require('node-fetch');
-const { ScoreBook } = require('./scorebook');
+const { ScoreBooks, ScoreBook, ScoreInning, ScoreBlock } = require('./scorebook');
 const { Baseball, Game, Team } = require("./baseball");
 
 class gamechanger {
@@ -456,17 +456,22 @@ class gamechanger {
           <td>${snap}</td>
           <td><div class="float hide">${deets}</div><button class="togglePrev">Show</button></td></tr>`);
       }
+      /**
+       * 
+       * @param {Game} game 
+       */
       const writeScorebook = (game) => {
-        if(game.scorebook)
+        if(game.scorebooks)
         {
           res.write(`<div class="scorebook">`);
           for(var side=0;side<2;side++)
           {
-            const book = game.scorebook.getBook(side);
+            /** @type ScoreBook */
+            const book = game.scorebooks.getBook(side);
             res.write(`<table border=1>
               <thead><tr><td width="200">Player</td>`);
             book.columns.forEach((col)=>{
-              if(!Object.values(col.plays).find((play)=>play.playType||play.pitches.length)) return;
+              if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
               res.write(`<td>${col.inning}</td>`);
             });
             res.write("</tr>\n");
@@ -487,13 +492,13 @@ class gamechanger {
               res.write(`
                 <tr><td>${player}</td>`);
               book.columns.forEach((col)=>{
-                if(!Object.values(col.plays).find((play)=>play.playType||play.pitches.length)) return;
-                const block = col.plays[playerId];
+                if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
+                const block = col.plays.find((b)=>b.playerId==playerId);
                 res.write(`<td>`);
                 if(block?.playType||block?.pitches?.length||block?.offense=="PR")
                 {
                   res.write(`<div class="toggleNext">`);
-                  res.write(ScoreBook.getScoreHTML(block));
+                  res.write(ScoreBooks.getScoreHTML(block));
                   res.write(`</div><div class="hide float">${JSON.stringify(block)}</div>`);
                 }
                 res.write(`</td>`);

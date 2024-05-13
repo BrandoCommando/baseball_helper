@@ -1,4 +1,4 @@
-const { ScoreBook } = require("./scorebook");
+const { ScoreBooks } = require("./scorebook");
 
 class baseball {
   constructor() {
@@ -44,7 +44,7 @@ class game {
     this.bases = [false,false,false,false]; // 0 = Home, 1 = 1B, 2 = 2B, 3 = 3B
     this.runs = [0,0];
     this.inning = 0;
-    this.scorebook = new ScoreBook();
+    this.scorebooks = new ScoreBooks();
     this.requestor = requestor;
     Object.keys(params).forEach((k)=>this[k] = params[k]);
     if(team?.id&&this.home_away)
@@ -91,7 +91,7 @@ class game {
       if(this.ballSide == 0)
       {
         this.inning++;
-        this.scorebook.newInning();
+        this.scorebooks.newInning();
       }
     }
   }
@@ -101,7 +101,7 @@ class game {
     }
     if(!this.bases[base]) return;
     const runnerId = this.bases[base];
-    const block = this.scorebook.getCurrentBlock(this.ballSide, runnerId); // [this.ballSide][this.inning][runnerId];
+    const block = this.scorebooks.getCurrentBlock(this.ballSide, runnerId); // [this.ballSide][this.inning][runnerId];
     // if(last||base>=3)
     {
       if(event.offense)
@@ -124,7 +124,7 @@ class game {
       {
         if(event.playType=="ball_in_play")
         {
-          this.scorebook.getCurrentBlock(this.ballSide, event.batterId).rbis++;
+          this.scorebooks.getCurrentBlock(this.ballSide, event.batterId).rbis++;
           event.rbis = (event.rbis || 0) + 1;
         }
         event.runs = this.runs[this.ballSide];
@@ -296,7 +296,7 @@ class game {
         break;
       case "place_runner":
         this.bases[event.attributes.base] = event.attributes.runnerId;
-        const block = this.scorebook.getCurrentBlock(tpos, event.attributes.runnerId);
+        const block = this.scorebooks.getCurrentBlock(tpos, event.attributes.runnerId);
         block.bases[0] = block.bases[1] = block.offense = "PR";
         break;
       case "clear_position_by_id":
@@ -410,9 +410,9 @@ class game {
     const tpos = event.home ? 1 : 0;
     event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
     if(!this.pitched)
-      this.scorebook.batterUp(tpos, event.batterId);
+      this.scorebooks.batterUp(tpos, event.batterId);
     this.pitched = true;
-    const block = this.scorebook.getCurrentBlock(tpos, event.batterId);
+    const block = this.scorebooks.getCurrentBlock(tpos, event.batterId);
     this.pitchCounts[1-tpos]++;
     // if(event.attributes?.advancesCount)
     {
@@ -481,7 +481,7 @@ class game {
   handleBallInPlay(event) {
     const tpos = event.home ? 1 : 0;
     event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
-    const block = this.scorebook.getCurrentBlock(tpos, event.batterId);
+    const block = this.scorebooks.getCurrentBlock(tpos, event.batterId);
     block.playType = event.attributes.playType;
     if(event.attributes.defenders?.length)
       block.location = [
@@ -570,7 +570,7 @@ class game {
         event.attributes.runnerId = this.bases[event.attributes.base-1];
       else console.warn(`Still bad runner: ${event.attributes.runnerId}`, {event,bases:this.bases});
     }
-    const block = this.scorebook.getCurrentBlock(tpos, event.attributes.runnerId);
+    const block = this.scorebooks.getCurrentBlock(tpos, event.attributes.runnerId);
     switch(event.attributes.playType)
     {
       case 'attempted_pickoff':
@@ -592,10 +592,20 @@ class game {
         break;
     }
     const lastEvent = this.events[this.events.length-1];
+    const lastBlock = this.scorebooks.getCurrentBlock(tpos, lastEvent.batterId);
     switch(event.attributes.playType)
     {
       case 'advanced_on_last_play':
-        block.bases[event.attributes.base-1] = lastEvent.offense;
+        block.bases[event.attributes.base-1] = lastEvent.offense ?? "SB";
+        if(event.attributes.base==4)
+        {
+          if(lastEvent.rbis)
+            lastEvent.rbis++;
+          else lastEvent.rbis = 1;
+          lastBlock.rbis++;
+          block.runs = event.runs = ++this.runs[tpos];
+        }
+        break;
       case 'other_advance':
       case 'defensive_indifference':
       case 'stole_base':
@@ -739,7 +749,7 @@ class game {
   }
   getShortPlayResult(event, defenders) {
     if(!event.playResult) return "";
-    const block = this.scorebook.getCurrentBlock(this.ballSide, event.batterId);
+    const block = this.scorebooks.getCurrentBlock(this.ballSide, event.batterId);
     switch (event.playResult)
     {
       case "double_play":

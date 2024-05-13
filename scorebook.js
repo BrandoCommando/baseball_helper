@@ -1,5 +1,6 @@
 class scoreblock {
-  constructor() {
+  constructor(playerId) {
+    this.playerId = playerId;
     this.strikes = this.balls = 0;
     this.pitches = [];
     this.playType = "";
@@ -12,30 +13,39 @@ class scoreblock {
     this.rbis = 0;
   }
 }
+class scoreinning {
+  constructor(inning)
+  {
+    this.inning = inning;
+    /** @type scoreblock[] */
+    this.plays = [];
+  }
+}
 class scorebook {
+  constructor(inning)
+  {
+    this.inning = inning;
+    /** @type scoreinning[] */
+    this.columns = [];
+    this.columns.push(
+      new scoreinning(inning)
+    );
+  }
+}
+class scorebooks {
   constructor() {
     this.currentColumn = [0,0];
     this.currentInning = 1;
     this.books = {
-      away: {
-        columns: [
-          {
-            inning: 1,
-            plays: {
-              // key: playerId
-              // value: scoreblock
-            }
-          }]
-        },
-      home: {
-        columns: [
-          {
-            inning: 1,
-            plays: {}
-          }]
-      }
+      away: new scorebook(1),
+      home: new scorebook(1)
     };
   }
+  /**
+   * 
+   * @param {*} home 
+   * @returns {scorebook}
+   */
   getBook(home)
   {
     return home ? this.books.home : this.books.away;
@@ -44,39 +54,52 @@ class scorebook {
   {
     const book = this.getBook(home);
     if(!book.columns[this.currentColumn[home]])
-      book.columns[this.currentColumn[home]] = { inning: this.currentInning, plays: {} };
+      book.columns[this.currentColumn[home]] = new scoreinning(this.currentInning);
     return book.columns[this.currentColumn[home]];
   }
   /**
    * 
    * @param {*} home 
-   * @param {*} playerId 
+   * @param {string} playerId 
+   * @param {*} noAdd
    * @returns {scoreblock}
    */
-  getCurrentBlock(home, playerId)
+  getCurrentBlock(home, playerId, noAdd)
   {
-    const cols = this.getCurrentInning(home);
-    if(!cols.plays[playerId])
-      cols.plays[playerId] = new scoreblock();
-    return cols.plays[playerId];
+    const inning = this.currentInning;
+    const book = this.getBook(home);
+    var c, i;
+    for(c = book.columns.length - 1; c >= 0; c--)
+    {
+      const cols = book.columns[c];
+      if(cols.inning != inning) continue;
+      for(i=cols.plays.length-1;i>=0;i--)
+        if(cols.plays[i].playerId==playerId)
+          return cols.plays[i];
+    }
+    if(!!noAdd) return false;
+    const cols = book.columns[this.currentColumn[home]];
+    cols.plays.push(new scoreblock(playerId));
+    return cols.plays[cols.plays.length-1];
   }
   newInning()
   {
     this.currentColumn[0]++;
     this.currentColumn[1]++;
     this.currentInning++;
-    this.books.away.columns[this.currentColumn[0]] = {inning: this.currentInning, plays: {}};
-    this.books.home.columns[this.currentColumn[1]] = {inning: this.currentInning, plays: {}};
+    this.books.away.columns[this.currentColumn[0]] = new scoreinning(this.currentInning);
+    this.books.home.columns[this.currentColumn[1]] = new scoreinning(this.currentInning);
   }
   batterUp(home, playerId)
   {
+    /** @type scorebook */
     const book = home ? this.books.home : this.books.away;
     // this.lastBatter[home] = playerId;
     if(!book.columns[this.currentColumn[home]])
-      book.columns[this.currentColumn[home]] = { inning: this.currentInning, plays: {} };
-    if(book.columns[this.currentColumn[home]].plays[playerId])
+      book.columns[this.currentColumn[home]] = new scoreinning(this.currentInning);
+    if(!!this.getCurrentBlock(home, playerId, true))
     {
-      const plays = Object.values(book.columns[this.currentColumn[home]].plays);
+      const plays = book.columns[this.currentColumn[home]].plays;
       if(plays.filter((block)=>block.playType||block?.pitches?.length).length>1)
       {
         this.currentColumn[home]++;
@@ -84,25 +107,15 @@ class scorebook {
         return this.batterUp(home, playerId);
       }
     }
-    book.columns[this.currentColumn[home]].plays[playerId] = new scoreblock();
-    return book.columns[this.currentColumn[home]].plays[playerId];
-  }
-  getBlock(home, inning, playerId)
-  {
-    const book = home ? this.books.home : this.books.away;
-    
-    if(!book.columns[inning])
-      book.innings[inning] = { inning: inning, plays: {} };
-    if(!book[inning].plays[playerId])
-      book.innings[inning].plays[playerId] = new scoreblock();
-    return book.innings[inning].plays[playerId];
+    book.columns[this.currentColumn[home]].plays.push(new scoreblock(playerId));
+    return book.columns[this.currentColumn[home]].plays.find((b)=>b.playerId==playerId);
   }
   hasBlock(home, inning, playerId)
   {
     const book = home ? this.books.home : this.books.away;
     if(!book[inning])
       return false;
-    if(!book[inning].plays[playerId])
+    if(!book[inning].plays.find((b)=>b.playerId==playerId))
       return false;
     return true;
   }
@@ -149,7 +162,12 @@ class scorebook {
     const base3 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 55 -15 15" transform="translate(-13.749 -30.811)"/>`;
     const base4 = `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m45 70 15 15" transform="translate(-13.749 -30.811)"/>`;
     if(!!block.runs)
+    {
       marks += `<path style="fill:#006252;stroke-width:0;" d="m60 85 15-15-15-15-15 15 15 15z" transform="translate(-13.749 -30.811)"/>`;
+      if(block.bases?.length==4)
+        if(block.bases[3]=="HR"||block.bases[3]=="3B"||block.bases[3]=="2B")
+          marks += base3;
+    }
     if(block.offense=="BB")
       marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -30.811)"/>`;
     if(block.offense=="1B"||block.offense=="FC")
@@ -249,4 +267,4 @@ class scorebook {
   }
 }
 
-module.exports = { ScoreBook: scorebook, ScoreBlock: scoreblock };
+module.exports = { ScoreBooks: scorebooks, ScoreBook: scorebook, ScoreInning: scoreinning, ScoreBlock: scoreblock };
