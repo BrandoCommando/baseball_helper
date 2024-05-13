@@ -481,7 +481,7 @@ class gamechanger {
                   found = game.teams[side].players.find((p)=>p.id==playerId);
                 if(found)
                 {
-                  player = `${found.first_name} ${found.last_name}`.trim();
+                  player = `#${found.number} ${found.first_name} ${found.last_name}`.trim();
                 }
               }
               res.write(`
@@ -490,7 +490,7 @@ class gamechanger {
                 if(!Object.values(col.plays).find((play)=>play.playType||play.pitches.length)) return;
                 const block = col.plays[playerId];
                 res.write(`<td>`);
-                if(block?.playType||block?.pitches?.length)
+                if(block?.playType||block?.pitches?.length||block?.offense=="PR")
                 {
                   res.write(`<div class="toggleNext">`);
                   res.write(ScoreBook.getScoreHTML(block));

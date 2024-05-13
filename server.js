@@ -64,6 +64,33 @@ app.get('/logout', bb_session, async(req,res)=>{
     req.session.destroy();
   res.redirect("/");
 });
+app.get('/get/:key', bb_session, async(req,res)=>{
+  const cache = new Cache(req, res);
+  const key = req.params.key;
+  const data = await cache.hget("gamechanger", key);
+  if(data)
+  {
+    if(data=JSON.parse(data))
+      res.json(data);
+    else res.send(data);
+  }
+  res.status(400).send(`Not Found: ${key}`);
+});
+app.get('/api/:path', bb_session, async(req,res)=>{
+  const cache = new Cache(req, res);
+  const path = req.params.path;
+  const gc = new GameChanger(req.cookies.gc_email, null, cache);
+  const data = await gc.getApi(path, true);
+  if(Array.isArray(data))
+    data.forEach((item)=>{
+      if(typeof(item.event_data)=="string")
+        item.event_data = JSON.parse(item.event_data);
+    });
+  if(data)
+    res.json(data);
+  else
+    res.status(400).send(`Not Found: ${path}`);
+});
   
 app.get('/keys', bb_session, async(req,res)=>{
   const cache = new Cache(req, res);

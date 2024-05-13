@@ -192,14 +192,27 @@ class game {
     {
       // console.log("Processing " + event.length + " events");
       const events = [];
+      const _events = [];
       for(var i=0;i<event.length;i++)
       {
         if(typeof(event[i].event_data)=="string")
           event[i].event_data = JSON.parse(event[i].event_data);
-        if(event[i].event_data?.code!="undo")
-          events.push(event[i]);
-        else events.pop();
+        if(event[i].event_data?.code=="delete")
+        {
+          event[i].event_data.deleteIds.forEach((delId)=>{
+            const ind = _events.findIndex((e)=>e.event_data.id==delId||e.id==delId||(e.event_data?.events?.length&&e.event_data.events.find((ee)=>ee.id==delId)));
+            if(ind>=0)
+              _events.splice(ind, 1);
+            else console.warn(`Unable to find ${delId}`);
+          });
+        } else
+          _events.push(event[i]);
       }
+      for(i=0;i<_events.length;i++)
+        if(_events[i].event_data?.code=="undo")
+          events.pop();
+        else
+          events.push(_events[i]);
       for(i=0;i<events.length;i++)
         this.processEvent(events[i], parent);
       return this;
@@ -280,6 +293,11 @@ class game {
         break;
       case "undo":
         console.error("Undo should not be here", event);
+        break;
+      case "place_runner":
+        this.bases[event.attributes.base] = event.attributes.runnerId;
+        const block = this.scorebook.getCurrentBlock(tpos, event.attributes.runnerId);
+        block.bases[0] = block.bases[1] = block.offense = "PR";
         break;
       case "clear_position_by_id":
       case "squash_lineup_index":
@@ -555,6 +573,8 @@ class game {
     const block = this.scorebook.getCurrentBlock(tpos, event.attributes.runnerId);
     switch(event.attributes.playType)
     {
+      case 'attempted_pickoff':
+        return true;
       case 'stole_base':
         event.offense = "SB";
         break;
