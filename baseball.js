@@ -124,8 +124,11 @@ class game {
       {
         // if(event.playType=="ball_in_play")
         {
-          this.scorebooks.getCurrentBlock(this.ballSide, event.batterId).rbis++;
-          event.rbis = (event.rbis || 0) + 1;
+          if(event.batterId!=block.playerId)
+          {
+            this.scorebooks.getCurrentBlock(this.ballSide, event.batterId).rbis++;
+            event.rbis = (event.rbis || 0) + 1;
+          }
         }
         // event.runs = this.runs[this.ballSide];
         if(event.shortResult)
