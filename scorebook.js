@@ -168,7 +168,7 @@ class scorebooks {
         if(block.bases[3]=="HR"||block.bases[3]=="3B"||block.bases[3]=="2B")
           marks += base3;
     }
-    if(block.offense=="BB")
+    if(block.offense=="BB"||block.offense=="HP")
       marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -30.811)"/>`;
     if(block.offense=="1B"||block.offense=="FC")
       marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -19.811)"/>`;
@@ -218,6 +218,16 @@ class scorebooks {
  			marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="92.23" y="25" transform="rotate(45 30.318 -32)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="91.31" y="25">${block.bases[3]}</tspan></text>`;
       if(outCodes.indexOf(block.bases[3])>-1||block.outs)
         marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m45 70 7.725 7.816M52 78.763l1.954-1.931" transform="translate(-13.749 -30.811)"/>`
+    }
+    if(!!block.runs)
+    {
+      marks += `<path style="fill:none;stroke:green;stroke-width:1.2;stroke-linecap:round" d="M44 30a6 6 0 0 1-6 6 6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6z" transform="translate(-13.749 -19.811)"/>`;
+      marks += `<text xml:space="preserve" x="36" y="43.8" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#060;stroke:none;text-align:center;" x="36" y="43.8">${block.runs}</tspan></text>`;
+    }
+    if(!!block.rbis)
+    {
+      marks += `<path style="fill:none;stroke:blue;stroke-width:0.8;stroke-linecap:round" d="M44 70a6 6 0 0 1-6 6 6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6z" transform="translate(-13.749 -19.811)"/>`;
+      marks += `<text xml:space="preserve" x="36" y="83.8" transform="translate(-13.749 -30.811)"><tspan style="font-size:8px;font-family:Arial;fill:blue;stroke:none;text-align:center;" x="36" y="83.8">${block.rbis}</tspan></text>`;
     }
  			
     if(block.location)

@@ -122,12 +122,12 @@ class game {
       this.runs[this.ballSide]++;
       if(event)
       {
-        if(event.playType=="ball_in_play")
+        // if(event.playType=="ball_in_play")
         {
           this.scorebooks.getCurrentBlock(this.ballSide, event.batterId).rbis++;
           event.rbis = (event.rbis || 0) + 1;
         }
-        event.runs = this.runs[this.ballSide];
+        // event.runs = this.runs[this.ballSide];
         if(event.shortResult)
           event.shortResult = `SAC${event.shortResult} | `;
         else event.shortResult = "";
