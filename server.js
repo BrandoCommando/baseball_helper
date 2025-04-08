@@ -6,10 +6,12 @@ const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const Cache = require('./cache');
 const session = require('express-session');
+const Db = require('./db');
 const MemoryStore = require('memorystore')(session);
+const RedisStore = require('connect-redis').default;
 const bb_session = session(
-  {secret:"baseball",name:"baseball",saveUninitialized:false,resave:false,cookie:{secure:false,httpOnly:true,maxAge:360000
-  ,store:new MemoryStore({checkPeriod:360000})
+  {secret:"baseball",name:"baseball",saveUninitialized:false,resave:true,cookie:{secure:false,httpOnly:true,maxAge:3600000
+  ,store:new RedisStore({prefix:"Yermom",client:new Db("Redis").createClient(true)})
   }});
 
 

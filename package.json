@@ -7,15 +7,16 @@
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "connect-redis": "^7.1.1",
     "cookie-parser": "^1.4.6",
     "crypto-js": "^4.2.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "express-session": "^1.18.0",
+    "express-session": "^1.17.2",
     "memory-cache": "^0.2.0",
     "memorystore": "^1.6.7",
     "node-fetch": "^2.6.6",
-    "redis": "^4.6.13"
+    "redis": "^4.6.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

@@ -9,8 +9,8 @@ class gamechanger {
     this.email = email;
     this.password = password;
     this.requests = [];
-    this.clientId = "34a66516-6c27-4bda-a269-13f5dcbef827";
-    this.signKey = "2l2hSBkHeJP3xv2BtC7qpZ6wYoOL7xAJK2NxvfVSyyI=";
+    this.clientId = "c66bec0d-0664-4802-be6d-07ad063cf120";
+    this.signKey = "Xoz8wTJ46Q2+Eh/Ql90Bdnyfo/pJpJbNH8tDxcU95PY=";
     this.lastSignature = false;
     this.token = false;
     this.cache = cache;
@@ -63,7 +63,7 @@ class gamechanger {
       "Referer": "https://web.gc.com/",
       "Referrer-Policy": "strict-origin-when-cross-origin",
       "gc-app-name": "web",
-      "gc-device-id": "80c0291ca56276f651dcd9983a7f914a",
+      "gc-device-id": "202072e26b3f013628839d4fef57e47c",
     }
     if(!!post)
     {
@@ -258,6 +258,19 @@ class gamechanger {
               result = team[pi];
       });
     }
+    if(type=="team")
+    {
+      if(!!this.teams) {
+        // if(!!this.teams[id]) return this.teams[id];
+        Object.values(this.teams).forEach((team)=>{
+          if(team.name&&team.id===id) {
+            result = team;
+            console.log("Found team", team);
+          }
+        });
+        if(!result) console.warn(`Bad teams? ${id}`, this.teams);
+      }
+    }
     if(!!result)
       return result;
     return id;
@@ -441,11 +454,18 @@ class gamechanger {
         let player = e.batterId || "";
         if(e.attributes.runnerId)
           player = e.attributes.runnerId;
+        else if(e.attributes.playerId)
+          player = e.attributes.playerId;
         if(typeof(player)=="string")
           player = gc.findData("player", player);
         if(typeof(player)=="object")
           player = `${player.first_name} ${player.last_name}`;
-        const stamp = new Date(e.createdAt).toLocaleTimeString();
+        const stamp = e.createdAt ? new Date(e.createdAt).toLocaleTimeString() : "";
+        if(!pr)
+        {
+          if(e.attributes.position) pr = e.attributes.position;
+          else if(e.attributes.base) pr = e.attributes.base;
+        }
         const deets = JSON.stringify(e);
         res.write(`<tr class="${e.hidden?'hidden':''}"><td>${e.sequence_number}</td>
           <td>${stamp}</td>

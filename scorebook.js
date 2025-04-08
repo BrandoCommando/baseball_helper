@@ -100,10 +100,15 @@ class scorebooks {
     if(!!this.getCurrentBlock(home, playerId, true))
     {
       const plays = book.columns[this.currentColumn[home]].plays;
-      if(plays.filter((block)=>block.playType||block?.pitches?.length).length>1)
+      const myPlay = plays.find((block)=>block.playerId==playerId);
+      const batPlays = plays.filter((block)=>!!block.playType||block?.pitches?.length);
+      if(!!myPlay&&batPlays.length>1)
       {
-        this.currentColumn[home]++;
-        console.log("Extra inning column", {col: this.currentColumn[home], inn: this.currentInning});
+        // if(myPlay.pitches.length>0)
+        {
+          this.currentColumn[home]++;
+          console.log(`Extra inning column: ${batPlays.length}`, {myPlay, col: this.currentColumn[home], inn: this.currentInning});
+        }
         return this.batterUp(home, playerId);
       }
     }
@@ -188,8 +193,7 @@ class scorebooks {
     	marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="-5" y="110" transform="rotate(-45 -44.067 1.19)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="-5" y="110">${block.bases[0]}</tspan></text>`;
  		if(!!block.bases[1]&&block.bases[1]!="PR")
     {
-      marks += base2;
- 			marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="92.23" y="-4.87" transform="rotate(45 30.318 -32)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="92.23" y="-4.88">${block.bases[1]}</tspan></text>`;
+     	marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="92.23" y="-4.87" transform="rotate(45 30.318 -32)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="92.23" y="-4.88">${block.bases[1]}</tspan></text>`;
       if(outCodes.indexOf(block.bases[1])>-1)
         marks += `<path
             style="fill:none;stroke:#000000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
@@ -201,17 +205,18 @@ class scorebooks {
             d="m 67.854858,61.240035 -1.94265,1.942654"
             transform="translate(-13.749 -30.811)"
             />`;
+      else marks += base2;
     }
  		if(!!block.bases[2]&&block.bases[2]!="PR")
     {
-      marks += base3;
- 			marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="-6" y="80" transform="rotate(-45 -44.067 1.19)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="-6" y="80">${block.bases[2]}</tspan></text>`;
+    	marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="-6" y="80" transform="rotate(-45 -44.067 1.19)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="-6" y="80">${block.bases[2]}</tspan></text>`;
       if(outCodes.indexOf(block.bases[2])>-1)
         marks += `<path
             style="fill:none;stroke:#000000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
             d="m60 55-7.77 7.771M51 62l1.943 1.943"
             transform="translate(-13.749 -30.811)"
             />`;
+      else marks += base3;
     }
  		if(!!block.bases[3])
     {
@@ -221,8 +226,9 @@ class scorebooks {
     }
     if(!!block.runs)
     {
+      let x = 36-(block.runs>9?2.5:0);
       marks += `<path style="fill:none;stroke:green;stroke-width:1.2;stroke-linecap:round" d="M44 30a6 6 0 0 1-6 6 6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6z" transform="translate(-13.749 -19.811)"/>`;
-      marks += `<text xml:space="preserve" x="36" y="43.8" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#060;stroke:none;text-align:center;" x="36" y="43.8">${block.runs}</tspan></text>`;
+      marks += `<text xml:space="preserve" x="${x}" y="43.8" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#060;stroke:none;text-align:center;" x="${x}" y="43.8">${block.runs}</tspan></text>`;
     }
     if(!!block.rbis)
     {
