@@ -90,14 +90,15 @@ class scorebooks {
     this.books.away.columns[this.currentColumn[0]] = new scoreinning(this.currentInning);
     this.books.home.columns[this.currentColumn[1]] = new scoreinning(this.currentInning);
   }
-  batterUp(home, playerId)
+  batterUp(home, playerId, extra)
   {
     /** @type scorebook */
     const book = home ? this.books.home : this.books.away;
     // this.lastBatter[home] = playerId;
     if(!book.columns[this.currentColumn[home]])
       book.columns[this.currentColumn[home]] = new scoreinning(this.currentInning);
-    if(!!this.getCurrentBlock(home, playerId, true))
+    const cur = this.getCurrentBlock(home, playerId, true);
+    if(!!cur)
     {
       const plays = book.columns[this.currentColumn[home]].plays;
       const myPlay = plays.find((block)=>block.playerId==playerId);
@@ -107,12 +108,15 @@ class scorebooks {
         // if(myPlay.pitches.length>0)
         {
           this.currentColumn[home]++;
-          console.log(`Extra inning column: ${batPlays.length}`, {myPlay, col: this.currentColumn[home], inn: this.currentInning});
+          console.log(`Extra inning column: ${batPlays.length}`, {cur, myPlay, col: this.currentColumn[home], inn: this.currentInning});
         }
-        return this.batterUp(home, playerId);
+        return this.batterUp(home, playerId, true);
       }
     }
-    book.columns[this.currentColumn[home]].plays.push(new scoreblock(playerId));
+    const newblock = new scoreblock(playerId);
+    if(!book.columns[this.currentColumn[home]].plays.length&&!extra)
+      newblock.top = true;
+    book.columns[this.currentColumn[home]].plays.push(newblock);
     return book.columns[this.currentColumn[home]].plays.find((b)=>b.playerId==playerId);
   }
   hasBlock(home, inning, playerId)

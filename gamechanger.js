@@ -514,7 +514,10 @@ class gamechanger {
               book.columns.forEach((col)=>{
                 if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
                 const block = col.plays.find((b)=>b.playerId==playerId);
-                res.write(`<td>`);
+                if(block?.top)
+                  res.write(`<td class="top">`);
+                else
+                  res.write(`<td>`);
                 if(block?.playType||block?.pitches?.length||block?.offense=="PR")
                 {
                   res.write(`<div class="toggleNext">`);
@@ -568,6 +571,7 @@ class gamechanger {
         .hidden{display:none}
         .float{position:absolute;margin-left:20px;background-color:white;border:1px solid black;padding:5px;}
         .hide{display:none}
+        td.top{border-top:4px solid black}
         </style>`);
       res.write(`<script>
         document.querySelectorAll('.toggleNext').forEach((el)=>el.addEventListener('click',()=>{el.nextSibling.classList.toggle('hide');}));
