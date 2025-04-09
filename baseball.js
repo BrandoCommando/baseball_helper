@@ -347,7 +347,6 @@ class game {
         this.advanceBases(event,1);
         break;
       case "pitch":
-        this.handlePitch(event);
         break;
       case "ball_in_play":
         this.handleBallInPlay(event, parent);
@@ -418,7 +417,7 @@ class game {
       this.clearBases();
     }
   }
-  handlePitch(event) {
+  handlePitch(event, parent) {
     const tpos = event.home ? 1 : 0;
     event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
     if(!this.pitched)
@@ -454,8 +453,11 @@ class game {
         block.pitches.push("B");
         if((block.balls=++this.counts.balls)>=4)
         {
-          event.playResult = event.offense = "BB";
-          this.walk(event);
+          if(!(parent&&parent.events&&parent.events.find((e)=>e.attributes.reason=="hit_by_pitch")))
+          {
+            event.playResult = event.offense = "BB";
+            this.walk(event);
+          }
         }
       }
       else if(event.attributes.result == "foul")
@@ -482,10 +484,13 @@ class game {
           block.defense = event.playResult;
           if(!event.attributes.playResult)
             event.attributes.playResult = event.playResult;
-          this.out();
-          event.outs = this.counts.outs;
-          block.outs = event.outs;
-          if(block.outs==3) block.last = true;
+          if(!(parent&&parent.events&&parent.events.find((e)=>e.attributes.playResult=="dropped_third_strike")))
+          {
+            this.out();
+            event.outs = this.counts.outs;
+            block.outs = event.outs;
+            if(block.outs==3) block.last = true;
+          }
         }
       }
     }
