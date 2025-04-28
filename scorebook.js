@@ -1,6 +1,7 @@
 class scoreblock {
-  constructor(playerId) {
+  constructor(playerId,row) {
     this.playerId = playerId;
+    this.row = row;
     this.strikes = this.balls = 0;
     this.pitches = [];
     this.playType = "";
@@ -11,6 +12,7 @@ class scoreblock {
     this.runs = 0;
     this.outs = 0;
     this.rbis = 0;
+    this.events = [];
   }
 }
 class scoreinning {
@@ -79,8 +81,32 @@ class scorebooks {
     }
     if(!!noAdd) return false;
     const cols = book.columns[this.currentColumn[home]];
-    cols.plays.push(new scoreblock(playerId));
+    cols.plays.push(new scoreblock(playerId,cols.plays.length));
     return cols.plays[cols.plays.length-1];
+  }
+  getBlockByRow(home, row, inning)
+  {
+    const book = this.getBook(home);
+    var c, i;
+    if(!inning) inning = 1;
+    for(c=0;c<book.columns.length;c++)
+    {
+      const cols = book.columns[c];
+      if(cols.inning != inning) continue;
+      for(i=0;i<cols.plays.length;i++)
+        if(cols.plays[i].row == row)
+          return cols.plays[i];
+    }
+    return false;
+  }
+  changePlayerByRow(home, row, toPlayerId)
+  {
+    const block = this.getBlockByRow(home, row);
+    if(block?.bases?.length||block?.pitches?.length)
+    {
+      console.log(`Changing block player to ${toPlayerId}`, block);
+      block.playerId = toPlayerId;
+    }
   }
   newInning()
   {
@@ -90,7 +116,7 @@ class scorebooks {
     this.books.away.columns[this.currentColumn[0]] = new scoreinning(this.currentInning);
     this.books.home.columns[this.currentColumn[1]] = new scoreinning(this.currentInning);
   }
-  batterUp(home, playerId, extra)
+  batterUp(home, playerId, extra, row)
   {
     /** @type scorebook */
     const book = home ? this.books.home : this.books.away;
@@ -105,15 +131,17 @@ class scorebooks {
       const batPlays = plays.filter((block)=>!!block.playType||block?.pitches?.length);
       if(!!myPlay&&batPlays.length>1)
       {
+        if(!myPlay.bases.length&&!myPlay.outs&&!myPlay.events.length) return myPlay;
         // if(myPlay.pitches.length>0)
         {
           this.currentColumn[home]++;
-          console.log(`Extra inning column: ${batPlays.length}`, {cur, myPlay, col: this.currentColumn[home], inn: this.currentInning});
+          console.log(`Extra inning column: ${batPlays.length}`, {cur, col: this.currentColumn[home], inn: this.currentInning});
         }
-        return this.batterUp(home, playerId, true);
+        return this.batterUp(home, playerId, true, row);
       }
     }
-    const newblock = new scoreblock(playerId);
+    if(!row) row = book.columns[this.currentColumn[home]].plays.length;
+    const newblock = new scoreblock(playerId,row);
     if(!book.columns[this.currentColumn[home]].plays.length&&!extra)
       newblock.top = true;
     book.columns[this.currentColumn[home]].plays.push(newblock);
@@ -131,21 +159,43 @@ class scorebooks {
   static getScoreHTML(block) {
     var marks = "";
     let pspot = [0,0];
+    const strikes = [];
+    const balls = [];
+    [...block.pitches].forEach((p,index)=>{
+      if(p=="B"){balls.push(index);}else{strikes.push(index);}
+    });
     if(block.pitches.length)
       block.pitches.forEach((pitch,num)=>{
+        let stroke = "000";
         let y = 81.383;
         let xi = 0;
         if(pitch=="B")
         {
+          balls.splice(0,1);
+          if(pspot[1]==3&&balls.length)
+            return;
           y = 89.167;
           xi = pspot[1]++;
           if(xi>=3) return;
         } else {
+          strikes.splice(0,1);
+          if(pspot[0]==2&&strikes.length>0)
+            return;
           xi = pspot[0]++;
-          if(xi>=2) return;
+          if(pitch=="L")
+            stroke = "900";
+          else if(pitch=="F")
+            stroke = "090";
+          // if(xi>=2) return;
         }
-        let x = 93 - (xi * 7.784);
-        marks += `<text xml:space="preserve" x="${x}" y="${y}" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:8px;font-family:Arial;fill:#000;stroke:none;" x="${x}" y="${y}">${num+1}</tspan></text>`;
+        let x = 93.5 - (xi * 7.784);
+        let fsize = 8;
+        if(num>=9)
+        {
+          x-=2;
+          fsize = 7;
+        }
+        marks += `<text xml:space="preserve" x="${x}" y="${y}" transform="translate(-13.749 -30.811)"><tspan style="font-weight:700;font-size:${fsize}px;font-family:Arial;fill:#${stroke};stroke:none;" x="${x}" y="${y}">${num+1}</tspan></text>`;
       });
     else {
       for(var ball=0;ball<Math.min(3,block.balls);ball++)
@@ -177,28 +227,33 @@ class scorebooks {
         if(block.bases[3]=="HR"||block.bases[3]=="3B"||block.bases[3]=="2B")
           marks += base3;
     }
-    if(block.offense=="BB"||block.offense=="HP")
+    let offense = block.offense;
+    if(!offense&&block.bases[0])
+      offense = block.bases[0];
+    if(offense=="BB"||offense=="HP")
       marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -30.811)"/>`;
-    if(block.offense=="1B"||block.offense=="FC")
+    if(['SAC',"K"].indexOf(offense)>-1)
+      marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 7.5-7.5m-.5 -1.5l1.943 1.943" transform="translate(-13.749 -30.811)"/>`;
+    if(['1B','FC','E','Kd3'].indexOf(offense)>-1)
       marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -19.811)"/>`;
-    if(block.offense=="2B")
+    if(offense=="2B")
       marks += `${base1}${base2}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -8.811)"/>`;
-    if(block.offense=="3B")
+    if(offense=="3B")
       marks += `${base1}${base2}${base3}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 2.189)"/>`;
-    if(block.offense=="HR")
+    if(offense=="HR")
       marks += `${base1}${base2}${base3}${base4}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 13.189)"/>`;
     else if(!!block.runs)
     	marks += `${base4}`;
-    else if(block.bases?.length>=3&&outCodes.indexOf(block.bases[2])==-1)
+    if(block.bases?.length>=3&&(outCodes.indexOf(block.bases[2])==-1||block.bases.length>=4||!block.outs))
     	marks += `${base3}`;
-    else if(block.bases?.length>=2&&outCodes.indexOf(block.bases[1])==-1&&block.bases[1]!="PR")
+    if(block.bases?.length>=2&&(outCodes.indexOf(block.bases[1])==-1||block.bases.length>=3||!block.outs)&&block.bases[1]!="PR")
     	marks += `${base2}`;
     if(!!block.bases[0]&&block.bases[0]!="PR")
     	marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="-5" y="110" transform="rotate(-45 -44.067 1.19)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="-5" y="110">${block.bases[0]}</tspan></text>`;
  		if(!!block.bases[1]&&block.bases[1]!="PR")
     {
      	marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="92.23" y="-4.87" transform="rotate(45 30.318 -32)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="92.23" y="-4.88">${block.bases[1]}</tspan></text>`;
-      if(outCodes.indexOf(block.bases[1])>-1)
+      if(outCodes.indexOf(block.bases[1])>-1&&block.bases.length<=2&&block.outs)
         marks += `<path
             style="fill:none;stroke:#000000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
             d="m 75,70 -7.7706,-7.770601"
@@ -214,7 +269,7 @@ class scorebooks {
  		if(!!block.bases[2]&&block.bases[2]!="PR")
     {
     	marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="-6" y="80" transform="rotate(-45 -44.067 1.19)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="-6" y="80">${block.bases[2]}</tspan></text>`;
-      if(outCodes.indexOf(block.bases[2])>-1)
+      if(outCodes.indexOf(block.bases[2])>-1&&block.bases.length<=3&&block.outs)
         marks += `<path
             style="fill:none;stroke:#000000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
             d="m60 55-7.77 7.771M51 62l1.943 1.943"
@@ -222,10 +277,10 @@ class scorebooks {
             />`;
       else marks += base3;
     }
- 		if(!!block.bases[3])
+ 		if(!!block.bases[3]&&(block.outs||block.runs))
     {
  			marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="92.23" y="25" transform="rotate(45 30.318 -32)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="91.31" y="25">${block.bases[3]}</tspan></text>`;
-      if(outCodes.indexOf(block.bases[3])>-1||block.outs)
+      if(outCodes.indexOf(block.bases[3])>-1&&block.outs)
         marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m45 70 7.725 7.816M52 78.763l1.954-1.931" transform="translate(-13.749 -30.811)"/>`
     }
     if(!!block.runs)
@@ -240,7 +295,7 @@ class scorebooks {
       marks += `<text xml:space="preserve" x="36" y="83.8" transform="translate(-13.749 -30.811)"><tspan style="font-size:8px;font-family:Arial;fill:blue;stroke:none;text-align:center;" x="36" y="83.8">${block.rbis}</tspan></text>`;
     }
  			
-    if(block.location)
+    if(block.location?.length)
     {
       let stroke = "none";
       if(block.playType=="ground_ball")
@@ -258,8 +313,10 @@ class scorebooks {
         }
         marks += `c ${dx1} ${dy1}, ${dx2} ${dy2}`;
       }
-      marks += ` ${x2} ${y2}" transform="translate(-13.749 -30.811)"/>`;`
-      `;
+      if(!isNaN(x2)&&!isNaN(y2))
+        marks += ` ${x2} ${y2}`;
+      else console.warn("Bad block location?", block);
+      marks += `" transform="translate(-13.749 -30.811)"/>`;
     }
     if(block.outs)
     {

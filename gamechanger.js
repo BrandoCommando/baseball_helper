@@ -3,6 +3,7 @@ const bcrypt = require("bcrypt");
 const fetch = require('node-fetch');
 const { ScoreBooks, ScoreBook, ScoreInning, ScoreBlock } = require('./scorebook');
 const { Baseball, Game, Team } = require("./baseball");
+const Util = require("./util");
 
 class gamechanger {
   constructor(email,password,cache) {
@@ -447,7 +448,7 @@ class gamechanger {
     else if(req.headers.accept?.indexOf("html")>-1)
     {
       const writeEventHTML = (e) => {
-        const r = e.attributes?.result || e.attributes?.playType || "";
+        let r = e.attributes?.result || e.attributes?.playType || "";
         let pr = e.shortResult || e.playResult || e.attributes?.playResult || "";
         const snap = e.snapshot;
         delete e.snapshot;
@@ -465,8 +466,20 @@ class gamechanger {
         {
           if(e.attributes.position) pr = e.attributes.position;
           else if(e.attributes.base) pr = e.attributes.base;
+          else if(e.code == 'reorder_lineup') {
+            pr = e.attributes.toIndex;
+            r = e.attributes.fromIndex;
+          }
+          else if(typeof(e.attributes.index)!="undefined")
+            r = e.attributes.index;
+          else if(!!e.pitcherId)
+          {
+            const pitcher = gc.findData("player", e.pitcherId);
+            if(typeof(pitcher)=="object")
+              pr = `${pitcher.first_name} ${pitcher.last_name}`;
+          }
         }
-        const deets = JSON.stringify(e);
+        const deets = Util.tablify(e);
         res.write(`<tr class="${e.hidden?'hidden':''}"><td>${e.sequence_number}</td>
           <td>${stamp}</td>
           <td>${player}</td>
@@ -484,11 +497,12 @@ class gamechanger {
         if(game.scorebooks)
         {
           res.write(`<div class="scorebook">`);
-          for(var side=0;side<2;side++)
+          for(var side=0;side<=1;side++)
           {
             /** @type ScoreBook */
             const book = game.scorebooks.getBook(side);
-            res.write(`<table border=1>
+            res.write(`<div class="toggleNext ${side?"breakup":""}">${game.teams[side].name} (${side?"vs":"@"} ${game.teams[1-side].name}) on ${new Date(game.events[0].createdAt).toLocaleDateString()}</div>
+              <table border="1">
               <thead><tr><td width="200">Player</td>`);
             book.columns.forEach((col)=>{
               if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
@@ -510,10 +524,14 @@ class gamechanger {
                 }
               }
               res.write(`
-                <tr><td>${player}</td>`);
-              book.columns.forEach((col)=>{
+                <tr><td>${benchPos+1}. ${player}</td>`);
+              book.columns.forEach((col,colin)=>{
                 if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
-                const block = col.plays.find((b)=>b.playerId==playerId);
+                let block = col.plays.find((b)=>b.playerId==playerId&&!b.used);
+                if(!block&&colin==0)
+                  block = col.plays.find((b)=>b.row==benchPos&&!b.used);
+                if(block)
+                  block.used = true;
                 if(block?.top)
                   res.write(`<td class="top">`);
                 else
@@ -522,7 +540,9 @@ class gamechanger {
                 {
                   res.write(`<div class="toggleNext">`);
                   res.write(ScoreBooks.getScoreHTML(block));
-                  res.write(`</div><div class="hide float">${JSON.stringify(block)}</div>`);
+                  if(block.events?.length)
+                    block.events.forEach((e)=>delete e.snapshotJ);
+                  res.write(`</div><div class="hide float"><div class="biggin">${Util.tablify(block)}</div></div>`);
                 }
                 res.write(`</td>`);
               });
@@ -534,50 +554,94 @@ class gamechanger {
         }
       };
       res.header("Content-Type", "text/html");
-      res.write("<html><head><title>"+gc.email+"</title></head><body>");
+      res.write(`<html><head><title>${gc.email}</title></head><body><div class="page">`);
       const suffix = req.query.user ? `&user=${req.query.user}` : "";
       if(out.events)
       {
-        res.write("<table border=1>");
+        res.write(`<table border="1">`);
         if(out.teams)
-          res.write(`<caption>${out.teams[0].name} vs ${out.teams[1].name}</caption>`);
+          res.write(`<caption>${out.teams[0].name} @ ${out.teams[1].name}</caption>`);
         out.events.forEach(writeEventHTML);
         res.write("</table>");
         writeScorebook(out);
       }
       if(gc.games)
-        gc.games.forEach((game)=>{
+      {
+        gc.games.forEach((game,gi)=>{
           const t1 = game.teams[0];
           const t2 = game.teams[1];
           if(!game.events?.length) {
-            res.write(`<a href="?game=${game.event_id}${suffix}">`);
+            const linkStart = `<a href="?game=${game.event_id}${suffix}">`;
+            if(gi==0)
+              res.write('<table>');
+            res.write('<tr>');
+            let matchType = "vs";
             if(game.home_away == "home")
-              res.write(`${game.getMyTeam().name} (${game.owning_team_score}) @ ${game.getOtherTeam().name} (${game.opponent_team_score}) ${game.last_scoring_update}`);
-            else
-              res.write(`${game.getMyTeam().name} (${game.owning_team_score}) vs ${game.getOtherTeam().name} (${game.opponent_team_score}) ${game.last_scoring_update}`);
-            
-            res.write(`</a><br>`);
+              matchType = "@";
+            res.write(`<td>${linkStart}${game.getMyTeam().name} (${game.owning_team_score})</a></td>`);
+            res.write(`<td>${matchType}<td>`);
+            res.write(`<td>${linkStart}${game.getOtherTeam().name} (${game.opponent_team_score})</a></td>`);
+            res.write(`<td>${linkStart}${game.last_scoring_update}</a></td>`);
+            res.write('</tr>');
+            if(gi==gc.games.length-1) res.write('</table>');
             return;
           }
           if(out.events) return;
-          res.write("<table border=1>");
-          res.write("<caption>" + t1.name + " vs " + t2.name + "</caption>");
+          res.write(`<div class="toggleNext"><h1>${t1.name} (${game.runs[0]}) @ ${t2.name} (${game.runs[1]}) on ${new Date(game.events[0].createdAt).toDateString()}</h1></div>`);
+          res.write(`<table border="1" class="hide">`);
           game.events.forEach(writeEventHTML);
           res.write("</table>");
           writeScorebook(game);
         });
+      }
 
-      res.write(`<style type="text/css">
-        .hidden{display:none}
+      res.write(`</div><style type="text/css">
+        .page{margin:0 20px;}
+        .hidden{opacity:0.5}
         .float{position:absolute;margin-left:20px;background-color:white;border:1px solid black;padding:5px;}
         .hide{display:none}
+        .breakup{page-break-before:always;margin-top:20px;}
+        .break{page-break-after:always;}
         td.top{border-top:4px solid black}
-        </style>`);
+        .divify div { display: inline-block; }
+        .item,.key { vertical-align: top; }
+        .biggin{max-width:400px;max-height:300px;overflow:auto;}
+        </style><style type="text/css" media="print">.page{margin:0px}.noprint{display:none}</style>`);
       res.write(`<script>
-        document.querySelectorAll('.toggleNext').forEach((el)=>el.addEventListener('click',()=>{el.nextSibling.classList.toggle('hide');}));
-        document.querySelectorAll('.togglePrev').forEach((el)=>el.addEventListener('click',()=>{el.previousSibling.classList.toggle('hide');})&&el.addEventListener('click',()=>{el.previousSibling.classList.toggle('hide')}));
+        document.querySelectorAll(".tablify .key,.divify .key").forEach((ktd)=>{
+          var vtd = ktd.nextElementSibling;
+          var sum = vtd.nextElementSibling;
+          ktd.addEventListener('click',()=>{
+            vtd.classList.toggle('hide');
+            sum.classList.toggle('hide');
+          });
+          sum.addEventListener('click',()=>{
+            vtd.classList.remove('hide');
+            sum.classList.add('hide');
+          });
+        });
+        document.querySelectorAll('.tablify .bracket').forEach((el)=>el.addEventListener('click',()=>{
+          var p = el.parentElement;
+          var vtd = p.querySelector("table");
+          var sum = p.querySelector(".sum");
+          if(vtd&&sum)
+          {
+            if(!sum.classList.contains('toggle'))
+            {
+              sum.classList.add('toggle');
+              sum.addEventListener('click',()=>{
+                vtd.classList.toggle('hide');
+                sum.classList.toggle('hide');
+              });
+            }
+            vtd.classList.toggle('hide');
+            sum.classList.toggle('hide');
+          }
+        }));
+        document.querySelectorAll('.toggleNext').forEach((el)=>el.addEventListener('click',()=>{el.nextElementSibling.classList.toggle('hide');}));
+        document.querySelectorAll('.togglePrev').forEach((el)=>el.addEventListener('click',()=>{el.previousElementSibling.classList.toggle('hide');})&&el.addEventListener('click',()=>{el.previousSibling.classList.toggle('hide')}));
         </script>`)
-      res.write(`<a href="/logout">Log Out</a>`);
+      res.write(`<a href="/logout" class="noprint">Log Out</a>`);
       res.write(`</body></html>`);
       res.end();
     } else res.send(gc);
