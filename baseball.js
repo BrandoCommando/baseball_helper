@@ -128,8 +128,16 @@ class game {
           block.bases[base] += this.lineup[tpos].indexOf(batterId) + 1;
         if(event.offense=="HR"&&base<3)
           block.bases[base] = "";
-        else if(event.offense=="3B"&&base<2)
-          block.bases[base] = "";
+        else if(event.offense=="3B")
+        {
+          if(base<2)
+            block.bases[base] = "";
+          else if(batterId != runnerId)
+          {
+            if(block.bases[base-1]==block.bases[base])
+              block.bases[base-1] = "";
+          }
+        }
         else if(event.offense=="2B")
         {
           if(base < 1)
@@ -196,9 +204,19 @@ class game {
   advanceBases(event,last,parent) {
     let stops = 0;
     if(parent?.events.length)
-      stops = parent.events.filter((e)=>['out_on_last_play','did_not_score','remained_on_last_play'].indexOf(e.attributes.playType)>-1).length;
-    if(stops>0)
-      console.log(`STOPs: ${stops}!`, event);
+      stops = parent.events.filter((e)=>['out_on_last_play','did_not_score','remained_on_last_play'].indexOf(e.attributes.playType)>-1);
+    stops.forEach((e)=>{
+      if(e.attributes.playType=="out_on_last_play")
+      {
+        event.attributes.runnerId = this.bases[e.attributes.base-1];
+        const block = this.scorebooks.getCurrentBlock(this.ballSide, event.attributes.runnerId);
+        this.counts.outs++;
+        e.outs=this.counts.outs;
+        e.handled=true;
+        block.outs=this.counts.outs;
+      }});
+    if(stops.length>0)
+      console.log(`STOPs: ${stops}!`, {event,events:JSON.stringify(parent.events)});
     else
       this.advanceBase(3,event,last,parent);
     if(stops<2)
@@ -235,6 +253,14 @@ class game {
     return false;
   }
   walk(event) {
+    if(event.batterId)
+    {
+      const block = this.scorebooks.getCurrentBlock(this.ballSide, event.batterId);
+      if(block) {
+        block.events.push(event);
+        block.pitcherId = this.getPosition(!this.ballSide, 'P');
+      }
+    }
     this.advanceBase(0,event,1);
     this.resetCount();
     this.nextBatter(true);
@@ -338,8 +364,7 @@ class game {
         }
       for(i=0;i<events.length;i++)
       {
-        // if(!parent)
-        {
+        if(!parent)
           parent = {events:[],count:events.length};
           // if(i>0)
           //   parent.events.push(events[i-1]);
@@ -351,7 +376,6 @@ class game {
                 parent.peek.push({sequence_id: events[j].id, sequence_number: events[j].sequence_number, ...events[j].event_data});
               else break;
           }
-        }
         this.processEvent(events[i], parent);
       }
       return this;
@@ -449,8 +473,7 @@ class game {
       case "transaction":
         // if(event.events.length>3&&event.events[0].code=='pitch')
         //   console.log("trans 3+", event);
-        if(event.events)
-          this.processEvent(event.events, event, 1);
+        this.processEvent(event.events, event, 1);
         return;
       case "goto_lineup_index":
         this.currentBatter
@@ -602,7 +625,7 @@ class game {
     this.pitchCounts[1-tpos]++;
     // if(event.attributes?.advancesCount)
     {
-      if(event.attributes.playResult)
+      if(event.attributes.playResult&&!event.handled)
       {
         let playHandled = false;
         if(event.attributes.playResult.indexOf("out")>-1)
@@ -620,7 +643,7 @@ class game {
           case 'dropped_third_strike_batter_out':
             break;
           default:
-            console.log(`New playResult: ${event.attributes.playResult} (${playHandled})`);
+            console.warn(`New playResult: ${event.attributes.playResult} (${playHandled})`);
         }
       }
       if(event.attributes?.result=="ball")
@@ -659,10 +682,11 @@ class game {
           if(event.attributes.result.indexOf("swinging")==-1)
             event.playResult = "ꓘ";
           else event.playResult = "K";
+          block.pitcherId = this.getPosition(!tpos, 'P');
           block.defense = event.playResult;
           if(!event.attributes.playResult)
             event.attributes.playResult = event.playResult;
-          if(!(parent&&parent.events&&parent.events.find((e)=>e.attribute?.playResult=="dropped_third_strike")))
+          if(!(parent?.events?.find((e)=>e.attributes?.playResult=="dropped_third_strike")))
           {
             this.out();
             event.outs = this.counts.outs;
@@ -677,6 +701,7 @@ class game {
     const tpos = event.home ? 1 : 0;
     event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
     const block = this.scorebooks.getCurrentBlock(tpos, event.batterId);
+    block.pitcherId = this.getPosition(!tpos, 'P');
     block.playType = event.attributes.playType;
     if(event.attributes.defenders?.length&&event.attributes.playResult!="dropped_third_strike_batter_out")
       block.location = [
@@ -774,6 +799,7 @@ class game {
     this.nextBatter(true);
   }
   handleBaseRunning(event,parent) {
+    if(event.handled) return;
     const tpos = event.home ? 1 : 0;
     if(event.attributes.runnerId == this.lineup[tpos][this.currentBatter[tpos]])
     {
@@ -1089,6 +1115,7 @@ class game {
         return event.playResult + " | " + this.getLongOuts();
       case "dropped_third_strike":
         event.offense = block.offense = "Kd3";
+        block.defense = "";
         return "Kd3";
       case "dropped_third_strike_batter_out":
         block.bases[0] = "K";
