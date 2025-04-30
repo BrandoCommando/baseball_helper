@@ -1,6 +1,7 @@
 class scoreblock {
   constructor(playerId,row) {
     this.playerId = playerId;
+    this.pitcher = "";
     this.row = row;
     this.strikes = this.balls = 0;
     this.pitches = [];
@@ -234,8 +235,10 @@ class scorebooks {
       marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -30.811)"/>`;
     if(['SAC',"K"].indexOf(offense)>-1)
       marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 7.5-7.5m-.5 -1.5l1.943 1.943" transform="translate(-13.749 -30.811)"/>`;
-    if(['1B','FC','E','Kd3'].indexOf(offense)>-1)
+    if(offense=="1B")
       marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -19.811)"/>`;
+    else if(['FC','E','Kd3'].indexOf(offense)>-1)
+      marks += base1;
     if(offense=="2B")
       marks += `${base1}${base2}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -8.811)"/>`;
     if(offense=="3B")
@@ -244,16 +247,16 @@ class scorebooks {
       marks += `${base1}${base2}${base3}${base4}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 13.189)"/>`;
     else if(!!block.runs)
     	marks += `${base4}`;
-    if(block.bases?.length>=3&&(outCodes.indexOf(block.bases[2])==-1||block.bases.length>=4||!block.outs))
+    if(block.bases?.length>=3&&(!block.bases[2]||outCodes.indexOf(block.bases[2].replace(/[0-9]*$/,""))==-1||block.bases.length>=4||!block.outs))
     	marks += `${base3}`;
-    if(block.bases?.length>=2&&(outCodes.indexOf(block.bases[1])==-1||block.bases.length>=3||!block.outs)&&block.bases[1]!="PR")
+    if(block.bases?.length>=2&&(!block.bases[1]||outCodes.indexOf(block.bases[1].replace(/[0-9]*$/,""))==-1||block.bases.length>=3||!block.outs)&&block.bases[1]!="PR")
     	marks += `${base2}`;
     if(!!block.bases[0]&&block.bases[0]!="PR")
     	marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="-5" y="110" transform="rotate(-45 -44.067 1.19)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="-5" y="110">${block.bases[0]}</tspan></text>`;
- 		if(!!block.bases[1]&&block.bases[1]!="PR")
+ 		if(!!block.bases[1]&&block.bases[1].replace(/[0-9]*$/,"")!="PR")
     {
      	marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="92.23" y="-4.87" transform="rotate(45 30.318 -32)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="92.23" y="-4.88">${block.bases[1]}</tspan></text>`;
-      if(outCodes.indexOf(block.bases[1])>-1&&block.bases.length<=2&&block.outs)
+      if(block.bases[1]&&outCodes.indexOf(block.bases[1].replace(/[0-9]*$/,""))>-1&&block.bases.length<=2&&block.outs)
         marks += `<path
             style="fill:none;stroke:#000000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
             d="m 75,70 -7.7706,-7.770601"
@@ -266,10 +269,10 @@ class scorebooks {
             />`;
       else marks += base2;
     }
- 		if(!!block.bases[2]&&block.bases[2]!="PR")
+ 		if(!!block.bases[2]&&block.bases[2].replace(/[0-9]*$/,"")!="PR")
     {
     	marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="-6" y="80" transform="rotate(-45 -44.067 1.19)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="-6" y="80">${block.bases[2]}</tspan></text>`;
-      if(outCodes.indexOf(block.bases[2])>-1&&block.bases.length<=3&&block.outs)
+      if(block.bases[2]&&outCodes.indexOf(block.bases[2].replace(/[0-9]*$/,""))>-1&&block.bases.length<=3&&block.outs)
         marks += `<path
             style="fill:none;stroke:#000000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
             d="m60 55-7.77 7.771M51 62l1.943 1.943"
@@ -280,7 +283,7 @@ class scorebooks {
  		if(!!block.bases[3]&&(block.outs||block.runs))
     {
  			marks += `<text xml:space="preserve" style="font-style:normal;font-variant:normal;font-weight:400;font-stretch:normal;font-size:7.9375px;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" x="92.23" y="25" transform="rotate(45 30.318 -32)"><tspan style="font-style:normal;font-variant:normal;font-weight:700;font-stretch:normal;font-size:7.9375px;font-family:Arial;fill:#000;stroke:none;stroke-width:1.2" x="91.31" y="25">${block.bases[3]}</tspan></text>`;
-      if(outCodes.indexOf(block.bases[3])>-1&&block.outs)
+      if(block.bases[3]&&outCodes.indexOf(block.bases[3].replace(/[0-9]*$/,""))>-1&&block.outs)
         marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m45 70 7.725 7.816M52 78.763l1.954-1.931" transform="translate(-13.749 -30.811)"/>`
     }
     if(!!block.runs)

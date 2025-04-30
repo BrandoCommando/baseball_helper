@@ -40,11 +40,21 @@ app.get('/', bb_session, async(req,res)=>{
   }
   if(!res.headersSent)
     res.send(`
+      <div style="display:grid;width:100vw;height:100vh;align-items:center;">
+      <div style="text-align:center;border:1px solid black;width:400px;margin:0 auto;padding:10px;">
+        <h1>Welcome to Brandon's Baseball Helper.</h1>
+        <p>To continue, please log in with your GC credentials. Note, for security purposes, your credentials are not saved, so you have to log in after 10 minutes.</p>
     <form method="POST" action="/login">
-    <label>Email: <input type="email" name="user" value="${req.cookies.gc_email}" /></label><br>
-    <label>Password: <input type="password" name="pass" /></label><br>
-    <input type="submit" />
+    <table cellspacing="2" style="display:inline-block"><tr>
+      <td><label for="user">Email:</label></td>
+      <td><input type="email" id="user" name="user" value="${req.cookies.gc_email}" /></td>
+      </tr><tr>
+      <td><label for="pass">Password:</label></td>
+      <td><input type="password" id="pass" name="pass" /></td>
+      </tr></table><br />
+    <input type="submit" value="Login" />
     </form>
+      </div></div>
     `)
   });
 

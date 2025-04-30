@@ -531,7 +531,19 @@ class gamechanger {
                 if(!block&&colin==0)
                   block = col.plays.find((b)=>b.row==benchPos&&!b.used);
                 if(block)
+                {
                   block.used = true;
+                  if(block.pitcherId)
+                  {
+                    const pitcher = this.findData("player", block.pitcherId);
+                    if(typeof(pitcher)=="object"&&pitcher.first_name)
+                      block.pitcher = `${pitcher.first_name} ${pitcher.last_name}`;
+                  }
+                  else {
+                    delete block.pitcherId;
+                    delete block.pitcher;
+                  }
+                }
                 if(block?.top)
                   res.write(`<td class="top">`);
                 else
@@ -573,7 +585,7 @@ class gamechanger {
           if(!game.events?.length) {
             const linkStart = `<a href="?game=${game.event_id}${suffix}">`;
             if(gi==0)
-              res.write('<table>');
+              res.write('<div class="games"><table>');
             res.write('<tr>');
             let matchType = "vs";
             if(game.home_away == "home")
@@ -583,7 +595,7 @@ class gamechanger {
             res.write(`<td>${linkStart}${game.getOtherTeam().name} (${game.opponent_team_score})</a></td>`);
             res.write(`<td>${linkStart}${game.last_scoring_update}</a></td>`);
             res.write('</tr>');
-            if(gi==gc.games.length-1) res.write('</table>');
+            if(gi==gc.games.length-1) res.write('</table></div>');
             return;
           }
           if(out.events) return;
@@ -598,6 +610,7 @@ class gamechanger {
       res.write(`</div><style type="text/css">
         .page{margin:0 20px;}
         .hidden{opacity:0.5}
+        .games{max-height:80vh;overflow-y:auto;padding:10px;display:inline-block;border:1px solid black;}
         .float{position:absolute;margin-left:20px;background-color:white;border:1px solid black;padding:5px;}
         .hide{display:none}
         .breakup{page-break-before:always;margin-top:20px;}
