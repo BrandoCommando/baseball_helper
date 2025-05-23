@@ -305,7 +305,7 @@ class scorebooks {
         stroke = "1.2,2.4"
       marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:${stroke};stroke-dashoffset:0;stroke-opacity:1" d="m60 85`;
       let x2 = (block.location[0]-160)/7;
-      let y2 = (340-block.location[1])/-7
+      let y2 = (340-block.location[1])/-7;
       if(block.playType&&block.playType.indexOf("fly")>-1)
       {
         let dx1 = 6, dx2 = 6;
@@ -327,6 +327,8 @@ class scorebooks {
     	marks += `<path style="fill:none;stroke:red;stroke-width:1.2;stroke-linecap:round" d="M96 30a6 6 0 0 1-6 6 6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6z" transform="translate(-13.749 -19.811)"/>`;
       if(block.defense)
         marks += `<text xml:space="preserve" style="font-weight:700;font-size:19px;font-family:Arial;text-align:center;text-anchor:middle;fill:red;stroke:none;" x="60" y="62" transform="translate(-13.749 -30.811)"><tspan style="font-size:19px;fill:red;text-align:center;stroke:none;" x="60" y="62">${block.defense}</tspan></text>`;
+      if(['K','ꓘ'].indexOf(block.defense)>-1&&block.pitcher)
+        marks += `<text xml:space'="preserve" style="font-weight:500;font-size:8px;font-family:Arial;text-align:center;text-anchor:middle;fill:red;stroke:none;" x="60" y="72" transform="translate(-13.749 -30.811)"><tspan style="font-size:8px;fill:red;text-align:center;stroke:none;" x="60" y="72">${block.pitcher}</tspan></text>`;
     }
     marks = `<svg width="162" height="112" viewBox="0 0 85.713 59.396" xmlns="http://www.w3.org/2000/svg">
         <path style="fill:none;stroke:#1a1a1a;stroke-width:.237034" d="M13.867 30.93h85.476v59.159H13.867z" transform="translate(-13 -30.811)"/>

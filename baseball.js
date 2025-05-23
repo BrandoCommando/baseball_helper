@@ -1,3 +1,4 @@
+const { PlayerStats } = require("./PlayerStats");
 const { ScoreBooks } = require("./scorebook");
 
 class baseball {
@@ -41,8 +42,11 @@ class game {
     this.allow_lineup = true;
     this.lineup = [[],[]]; // visitors, home
     this.positions = [{},{}]; // visitors, home
+    this.inning_positions = [[{},{}]];
     this.counts = {"balls":0,"strikes":0,"outs":0};
     this.bases = [false,false,false,false]; // 0 = Home, 1 = 1B, 2 = 2B, 3 = 3B
+    this.inning_stats = [[{runs:0,hits:0,errors:0},{runs:0,hits:0,errors:0}]];
+    this.player_stats = {};
     this.runs = [0,0];
     this.inning = 0;
     this.scorebooks = new ScoreBooks();
@@ -58,6 +62,43 @@ class game {
         players: team.players
       };
     }
+  }
+  recrunch() {
+    if(this.events.length)
+      this.events.forEach((e)=>this.check_defenders(e));
+    // if(this.player_stats)
+    //   Object.entries(this.player_stats).forEach((entry,i)=>{
+    //     const key = entry[0];
+    //     const pstat = entry[1];
+    //     if(key=='0'||key=='1') return;
+    //     const player = this.findPlayer(key);
+    //     if(typeof(player)=="object"&&player&&player.first_name)
+    //       this.player_stats[key].name = `${player.first_name} ${player.last_name}`;
+    //   });
+    console.log("Recrunch done");
+  }
+  check_defenders(event)
+  {
+    if(event.attributes?.defenders?.length)
+      event.attributes.defenders.forEach((d,i)=>{
+        if(d.playerId)
+          d.player = this.getPlayerName(d.playerId);
+      });
+    else if(event.events?.length)
+      event.events.forEach((e)=>this.check_defenders(e));
+  }
+  getPlayerName(playerId)
+  {
+    for(var team of this.teams)
+    {
+      if(team.players)
+        for(var player of team.players)
+          if(player.id == playerId) return `${player.first_name} ${player.last_name}`;
+    }
+    const p = this.findPlayer(playerId);
+    if(typeof(p)=="object"&&!!p.first_name)
+      return `${p.first_name} ${p.last_name}`;
+    return undefined;
   }
   setMyTeam(team) {
     let tside = 1;
@@ -80,8 +121,8 @@ class game {
       tside = 1;
     if(typeof(team)=="object"&&team.id)
     {
-      this.teams[tside] = {id:team.id,name:team.name,players:team.players};
-    }
+      this.teams[tside] = team;
+    } else console.error("Bad other team!", team);
   }
   hasOtherTeam() { return this.teams[this.home_away=="home"?1:0].id > 0; }
   resetCount(resetOuts) {
@@ -93,13 +134,24 @@ class game {
       if(this.ballSide == 0)
       {
         this.inning++;
+        this.inning_stats[this.inning] = [{runs:0,hits:0,errors:0},{runs:0,hits:0,errors:0}];
         this.scorebooks.newInning();
       }
     }
   }
   advanceBase(base, event, last, parent) {
+    const bstats = this.getPlayerStats(event.batterId, this.ballSide);
     if(base==0) {
       this.bases[0] = this.lineup[this.ballSide][this.currentBatter[this.ballSide]];
+      bstats.battingStats.pa++;
+      if(event.offense&&['BB','HP','SAC'].indexOf(event.offense)==-1)
+        bstats.battingStats.ab++;
+      if(event.offense=="BB")
+        bstats.battingStats.bb++;
+      else if(event.offense=="HP")
+        bstats.battingStats.hbp++;
+      else if(event.offense?.indexOf("SAC")>-1)
+        bstats.battingStats.sac++;
     }
     const tpos = this.ballSide;
     if(!this.bases[base]) return;
@@ -114,6 +166,11 @@ class game {
     if(!lastEvent.code&&last?.code=="ball_in_play") lastEvent = last;
     const batterId = lastEvent?.batterId ?? event.batterId;
     const block = this.scorebooks.getCurrentBlock(this.ballSide, runnerId); // [this.ballSide][this.inning][runnerId];
+    const stats = this.getPlayerStats(runnerId, this.ballSide);
+    if(block.outs||block.runs) {
+      console.warn("Advance after out/run?", {event,block});
+      return;
+    }
     if(block&&lastEvent.id&&!block.events.find((e)=>lastEvent.id==e.id))
       block.events.push(lastEvent);
     if(block&&event.id&&!block.events.find((e)=>event.id==e.id))
@@ -170,19 +227,25 @@ class game {
         if(lastEvent.offense=="2B"&&bl<=base)
           block.bases[base] = "";
         else
-          block.bases[base] = lastEvent.offsense + this.lineup[tpos].indexOf(lastEvent.batterId) + 1;
+          block.bases[base] = lastEvent.offense + this.lineup[tpos].indexOf(lastEvent.batterId) + 1;
       }
     }
     if(base>=3&&!(['out_on_last_play','did_not_score','remained_on_last_play'].indexOf(runnerEvent?.attributes?.playType)>-1))
     {
       // console.log(`No runner event for ${runnerId} on ${base}?`, runnerEvent);
       this.runs[this.ballSide]++;
+      this.inning_stats[this.inning][this.ballSide].runs++;
+      const pitcherStats = this.getPlayerStats(this.getPosition(1-this.ballSide,'P'),1-this.ballSide);
+      pitcherStats.pitchingStats.r++;
+      if(!block.bases.find((b)=>typeof(b)=="string"&&b.length>0&&b.substring(0,1)=='E'))
+        pitcherStats.pitchingStats.er++;
       if(event)
       {
         // if(event.playType=="ball_in_play")
         {
           if(event.batterId!=block.playerId&&event.attributes?.result!="ball")
           {
+            this.getPlayerStats(event.batterId, this.ballSide).battingStats.rbi++;
             this.scorebooks.getCurrentBlock(this.ballSide, event.batterId).rbis++;
             event.rbis = (event.rbis || 0) + 1;
           }
@@ -192,6 +255,7 @@ class game {
           event.shortResult = `${event.shortResult.replace("G","")} | `;
         else event.shortResult = "";
         event.shortResult += this.getLongRuns();
+        stats.battingStats.r++;
       }
       block.runs = this.runs[this.ballSide];
       this.bases[3] = false;
@@ -202,23 +266,26 @@ class game {
     }
   }
   advanceBases(event,last,parent) {
-    let stops = 0;
+    let stops = [];
     if(parent?.events.length)
-      stops = parent.events.filter((e)=>['out_on_last_play','did_not_score','remained_on_last_play'].indexOf(e.attributes.playType)>-1);
+      stops = parent.events.filter((e)=>['out_on_last_play','did_not_score','remained_on_last_play'].indexOf(e?.attributes?.playType)>-1);
     stops.forEach((e)=>{
       if(e.attributes.playType=="out_on_last_play")
       {
         event.attributes.runnerId = this.bases[e.attributes.base-1];
         const block = this.scorebooks.getCurrentBlock(this.ballSide, event.attributes.runnerId);
         this.counts.outs++;
+        this.bases[e.attributes.base-1] = "";
+        block.bases[e.attributes.base-1] = "PO";
         e.outs=this.counts.outs;
         e.handled=true;
         block.outs=this.counts.outs;
+        block.events.push(e);
       }});
-    if(stops.length>0)
-      console.log(`STOPs: ${stops}!`, {event,events:JSON.stringify(parent.events)});
-    else
+    if(stops.length==0)
       this.advanceBase(3,event,last,parent);
+    // else
+      // console.log(`STOPs: ${stops}!`, {event,events:JSON.stringify(parent.events)});
     if(stops<2)
     this.advanceBase(2,event,last,parent);
     this.advanceBase(1,event,last,parent);
@@ -240,9 +307,49 @@ class game {
         [this.ballSide]
         [this.currentBatter[this.ballSide]]);
   }
-  out() {
+  out(event) {
     if(!this.pitched) return;
     ++this.counts.outs;
+    const bstats = this.getPlayerStats(event.batterId,this.ballSide);
+    const pstats = this.getPlayerStats(event.pitcherId,1-this.ballSide);
+    if(this.counts.outs==3)
+    {
+      pstats.pitchingStats.lob += this.bases.filter((b)=>typeof(b)=="string"&&b!="").length;
+    }
+    if(event?.batterId)
+      bstats.battingStats.pa++;
+    if(["ꓘ",'K'].indexOf(event.defense)>-1)
+      bstats.battingStats.so++;
+    const catcherId = this.getPosition(1-this.ballSide,'C');
+    if(event.defense=="ꓘ")
+    {
+      bstats.battingStats.kl++;
+    }
+    if(['K','ꓘ'].indexOf(event.defense)>-1)
+    {
+      this.getPlayerStats(catcherId||(1-this.ballSide),1-this.ballSide).catchingStats.po++;
+    }
+    const dlen = event.attributes?.defenders?.length ?? 0;
+    if(dlen>0)
+      event.attributes?.defenders?.forEach((d,i)=>{
+        const defenderId = this.getPosition(1-this.ballSide, d.position) || (1-this.ballSide);
+        d.playerId = defenderId;
+        const dstats = this.getPlayerStats(defenderId,1-this.ballSide);
+        if(dstats.name != defenderId && dstats.name.indexOf("Other (")==-1)
+          d.player = dstats.name;
+        d.putout = i == dlen - 1;
+        d.assisted = i > 0;
+        if(event.attributes.extendedPlayResult=="double_play")
+        {
+          d.double_play = true;
+          d.putout = i >= dlen - 2;
+        } else if(event.attributes.extendedPlayResult=="triple_play")
+        {
+          d.triple_play = true;
+          d.puout = i >= dlen - 3;
+        }
+        dstats.fielding_play(event, d);
+      });
     this.resetCount(false);
     this.nextBatter(true);
   }
@@ -253,13 +360,21 @@ class game {
     return false;
   }
   walk(event) {
-    if(event.batterId)
+    if(event?.batterId)
     {
       const block = this.scorebooks.getCurrentBlock(this.ballSide, event.batterId);
       if(block) {
         block.events.push(event);
         block.pitcherId = this.getPosition(!this.ballSide, 'P');
       }
+    }
+    if(event?.pitcherId)
+    {
+      const pstats = this.getPlayerStats(event.pitcherId,1-this.ballSide).pitchingStats;
+      if(event.offense=="HP")
+        pstats.hbp++;
+      else
+        pstats.bb++;
     }
     this.advanceBase(0,event,1);
     this.resetCount();
@@ -278,6 +393,20 @@ class game {
       for(var pos=0;pos<this.lineup[side].length;pos++)
         ret[side][pos] = this.findPlayer(this.lineup[side][pos]);
     return ret;
+  }
+  processGame(events)
+  {
+    this.processEvent(events);
+    this.endGame();
+  }
+  endGame() {
+    Object.values(this.player_stats).forEach((ps)=>{
+      if(ps.batters_faced?.length)
+      {
+        // console.log(`RELIEF! ${ps.name} / Inning: ${this.inning} / ${this.counts.outs}`, ps.pitchingStats);
+        ps.relieve(this.inning, this.counts.outs);
+      }
+    });
   }
   processEvent(event, parent) {
     if(Array.isArray(event))
@@ -321,8 +450,15 @@ class game {
         {
           event[i].event_data.events.forEach((editevent)=>{
             const replaceWith = [];
-            if(editevent.code=="replace"&&editevent.events)
+            if(editevent.events)
               editevent.events.forEach((repEvent)=>replaceWith.push(repEvent));
+            if(editevent.code=="insert"&&editevent.beforeId)
+            {
+              const ei = _events.findIndex((e)=>e.id==editevent.beforeId||e.event_data?.id==editevent.beforeId||e.events?.find((ee)=>ee.id==editevent.beforeId));
+              if(ei>-1)
+                _events.splice(ei,0,replaceWith);
+              else console.warn(`Unable to insert before ${editevent.beforeId} in ${_events.length} events: ${JSON.stringify(_events[16])}`);
+            }
             if(editevent.deleteIds)
 
               editevent.deleteIds.forEach((delId,dind)=>{
@@ -332,7 +468,7 @@ class game {
                   if(e.event_data?.id==delId||e.id==delId)
                   {
                     found = true;
-                    _events.splice(ind, 1, replaceWith[dind]);
+                    _events.splice(ind, 1, replaceWith);
                   }
                   if(!found&&e.event_data?.events?.length)
                     e.event_data.events.forEach((ee,eind)=>{
@@ -341,7 +477,13 @@ class game {
                         editevent.parent_number = e.sequence_number;
                         console.log(`Replacement of ${delId} on Event ${e.id}`, {"before":JSON.stringify(ee), "after":JSON.stringify(replaceWith[dind])});
                         found = true;
-                        e.event_data.events.splice(eind, 1, replaceWith[dind]);
+                        replaceWith.forEach((re)=>{
+                          if(!re.event_data)
+                            re.event_data = {...re};
+                        });
+                        e.event_data.events.splice(eind, 1, replaceWith);
+                        // while(replaceWith.length>0)
+                        //   e.event_data.events.push(replaceWith.splice(0,1));
                       }
                     });
                 });
@@ -353,10 +495,31 @@ class game {
         } else
           _events.push(event[i]);
       }
+      const undos = [];
       for(i=0;i<_events.length;i++)
         if(_events[i].event_data?.code=="undo")
-          events.pop();
-        else
+          undos.push(events.pop());
+        else if(_events[i].event_data?.code=="redo")
+          events.push(undos.pop());
+        else if(_events[i].code=="modify_event")
+        {
+          const event = _events[i];
+          const event_id = event.event_id;
+          let found = false;
+          _events[i].forEach((e)=>{
+            if(found) return;
+            if(e.id==event.modify_id) {
+              found = e;
+            } else if(e.event_data?.events) {
+              e.event_data.events.forEach((ce)=>{
+                if(ce.id==event.modify_id)
+                {
+                  found = ce;
+                }
+              });
+            }
+          });
+        } else
         {
           // if(typeof(_events[i].event_data)=="string")
           //   _events[i].event_data = JSON.parse(_events[i].event_data);
@@ -490,7 +653,11 @@ class game {
         block.bases[0] = block.bases[1] = block.offense = "PR";
         break;
       case "clear_position_by_id":
-        console.warn('Not sure what to do', event);
+        const atpos = this.teams.findIndex((t)=>t.id==event.attributes.teamId);
+        if(this.positions[atpos][event.attributes.playerId])
+          this.positions[atpos][event.attributes.playerId] = "";
+        // else
+        //   console.warn(`Not sure what to do: ${atpos} ${event.attributes.playerId}`, this.positions[atpos]);
         event.hidden = true;
         break;
       case "squash_lineup_index":
@@ -519,13 +686,45 @@ class game {
         event.hidden = true;
         break;
       case "fill_position":
-        if(event.attributes.position=="P")
-          this.pitchCounts[tpos] = 0;
-        else if(event.attributes.position!="C")
-          event.hidden = true;
-        this.positions
-          [tpos]
-          [event.attributes.playerId] = event.attributes.position;
+        const oldPlayerId = this.getPosition(tpos, event.attributes.position);
+        const myPlayerStats = this.getPlayerStats(event.attributes.playerId, tpos);
+        if(oldPlayerId != event.attributes.playerId && this.positions[tpos][event.attributes.playerId] != event.attributes.position)
+        {
+          if(event.attributes.position=="P")
+          {
+            console.log(`New pitcher: ${event.attributes.playerId} in for ${oldPlayerId}`);
+            if(oldPlayerId)
+              this.getPlayerStats(oldPlayerId, tpos).relieve(this.inning, this.counts.outs);
+            myPlayerStats.putOnMound(this.inning, this.counts.outs);
+            this.pitchCounts[tpos] = 0;
+          }
+          else if(event.attributes.position!="C")
+            event.hidden = true;
+          this.positions[tpos][oldPlayerId] = "";
+          this.positions
+            [tpos]
+            [event.attributes.playerId] = event.attributes.position;
+          if(!this.inning_positions[this.inning])
+            this.inning_positions[this.inning] = [];
+          if(!this.inning_positions[this.inning][tpos])
+            this.inning_positions[this.inning][tpos] = {};
+          this.inning_positions[this.inning][tpos][event.attributes.playerId] = event.attributes.position;
+        }
+        break;
+      case "sub_players":
+        const teamId = event.attributes.teamId;
+        if(this.teams[0].id==teamId)
+          tpos = 0;
+        else tpos = 1;
+        let pos = this.lineup[tpos].findIndex((p)=>p==event.attributes.outgoingPlayerId);
+        if(pos>-1)
+          this.lineup[tpos][pos] = event.attributes.incomingPlayerId;
+        const fpos = this.positions[tpos][event.attributes.outgoingPlayerId];
+        if(fpos)
+        {
+          this.positions[tpos][event.attributes.incomingPlayerId] = fpos;
+          delete this.positions[tpos][event.attributes.outgoingPlayerId];
+        }
         break;
       case "balk":
         event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
@@ -578,6 +777,9 @@ class game {
       case "delete":
       case "edit_group":
         break;
+      case "modify_event":
+        
+        break;
       default:
         console.warn(`New event code: ${event.code}`, JSON.stringify(event));
     }
@@ -620,9 +822,13 @@ class game {
     event.pitcherId = this.getPosition(event.home ? 0 : 1, "P");
     if(!this.pitched)
       this.scorebooks.batterUp(tpos, event.batterId, false, this.currentBatter[tpos]);
+    const bstats = this.getPlayerStats(event.batterId,this.ballSide);
+    const pstats = this.getPlayerStats(event.pitcherId||(1-this.ballSide),1-this.ballSide);
+    const cstats = this.getPlayerStats(this.getPosition(1-this.ballSide,'C')||(1-this.ballSide),1-this.ballSide);
     this.pitched = true;
     const block = this.scorebooks.getCurrentBlock(tpos, event.batterId);
     this.pitchCounts[1-tpos]++;
+    bstats.battingStats.ps++;
     // if(event.attributes?.advancesCount)
     {
       if(event.attributes.playResult&&!event.handled)
@@ -631,7 +837,7 @@ class game {
         if(event.attributes.playResult.indexOf("out")>-1)
         {
           playHandled = true;
-          this.out();
+          this.out(event);
           event.outs = this.counts.outs;
           if(event.attributes.playResult.indexOf("advance_runners")>-1)
           {
@@ -641,6 +847,7 @@ class game {
         switch(event.attributes.playResult)
         {
           case 'dropped_third_strike_batter_out':
+            // this.getPlayerStats(event.pitcherId).strikeouts++;
             break;
           default:
             console.warn(`New playResult: ${event.attributes.playResult} (${playHandled})`);
@@ -649,6 +856,7 @@ class game {
       if(event.attributes?.result=="ball")
       {
         block.pitches.push("B");
+        bstats.battingStats.tbs++;
         if((block.balls=++this.counts.balls)>=4)
         {
           if(!(parent&&parent.events&&parent.events.find((e)=>e.attributes.reason=="hit_by_pitch")))
@@ -660,6 +868,9 @@ class game {
       }
       else if(event.attributes.result == "foul")
       {
+        if(block.strikes==2)
+          bstats.battingStats.tf2++;
+        bstats.battingStats.tf++;
         block.pitches.push("F");
         if(this.counts.strikes<3 && event.attributes.advancesCount) {
           this.counts.strikes++;
@@ -668,27 +879,36 @@ class game {
       }
       else if(event.attributes?.result!="ball_in_play")
       {
+        if(event.attributes.result.indexOf("strike")>-1)
+        {
+          if(event.attributes.result.indexOf("swing")==-1)
+            bstats.battingStats.tsl++;
+          else bstats.battingStats.tsw++;
+        }
         if(event.attributes.advancesCount&&(this.counts.strikes<=2||event.attributes.result.indexOf("strike")>-1))
         {
           this.counts.strikes++;
           if(event.attributes.result.indexOf("looking")>-1)
+          {
             block.pitches.push("L");
-          else
+          } else
             block.pitches.push("S");
           block.strikes = this.counts.strikes;
         }
         if(this.counts.strikes>=3)
         {
           if(event.attributes.result.indexOf("swinging")==-1)
-            event.playResult = "ꓘ";
-          else event.playResult = "K";
+          {
+            event.playResult = event.defense = "ꓘ";
+          }
+          else event.playResult = event.defense = "K";
           block.pitcherId = this.getPosition(!tpos, 'P');
           block.defense = event.playResult;
           if(!event.attributes.playResult)
             event.attributes.playResult = event.playResult;
           if(!(parent?.events?.find((e)=>e.attributes?.playResult=="dropped_third_strike")))
           {
-            this.out();
+            this.out(event);
             event.outs = this.counts.outs;
             block.outs = event.outs;
             if(block.outs==3) block.last = true;
@@ -696,19 +916,56 @@ class game {
         }
       }
     }
+    pstats.pitch(event, this.inning);
+    cstats.catchingStats["#C"]++;
+  }
+  
+  /**
+   * 
+   * @param {String} playerId 
+   * @returns {PlayerStats}
+   */
+  getPlayerStats(playerId, side) {
+    if(typeof(side)=="boolean"&&!side) side = 0;
+    if(side=="false") side = 0;
+    if(!playerId&&typeof(side)!="undefined"&&!this.player_stats[side])
+      playerId = side;
+    if(!this.player_stats[playerId])
+    {
+      let name = "?";
+      const player = this.findPlayer(playerId);
+      if(typeof(player)=="object"&&player.first_name)
+        name = `${player.first_name} ${player.last_name}`;
+      else if(this.teams.length>=side)
+        name = `Other (${this.teams[side].name})`;
+      else
+        name = `Other`;
+      this.player_stats[playerId] = new PlayerStats(name);
+    }
+    this.player_stats[playerId].playerId = playerId;
+    return this.player_stats[playerId];
   }
   handleBallInPlay(event, parent) {
     const tpos = event.home ? 1 : 0;
     event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
     const block = this.scorebooks.getCurrentBlock(tpos, event.batterId);
+    const playerStats = this.getPlayerStats(event.batterId, tpos);
     block.pitcherId = this.getPosition(!tpos, 'P');
+    const pitcherStats = this.getPlayerStats(block.pitcherId, 1-tpos);
     block.playType = event.attributes.playType;
+    if(event.attributes.playResult=='home_run')
+      this.handleHomeRun(event);
     if(event.attributes.defenders?.length&&event.attributes.playResult!="dropped_third_strike_batter_out")
       block.location = [
         Math.round(event.attributes.defenders[0].location.x),
         Math.round(event.attributes.defenders[0].location.y)
       ];
     block.events.push(event);
+    if(['single','double','triple','home_run'].indexOf(event.attributes.playResult)>-1)
+    {
+      this.inning_stats[this.inning][this.ballSide].hits++;
+      pitcherStats.pitchingStats.h++;
+    }
     switch(event.attributes.playResult)
     {
       case "sacrifice_bunt":
@@ -716,7 +973,7 @@ class game {
         event.offense = "SAC";
         block.bases[0] = "SAC";
       case "batter_out_advance_runners":
-        this.out();
+        this.out(event);
         event.outs = this.counts.outs;
         this.bases[0] = false;
         let scored = false;
@@ -747,7 +1004,7 @@ class game {
       case "batter_out":
       case "dropped_third_strike_batter_out":
       case "offensive_interference":
-        this.out();
+        this.out(event);
         event.outs = this.counts.outs;
         event.shortResult = this.getLongOuts();
         block.defense = this.getOutCode(event,parent);
@@ -756,9 +1013,30 @@ class game {
         break;
       case "dropped_third_strike":
         event.offense = "Kd3";
+        const catcherId = this.getPosition(1-tpos,'C');
+        this.getPlayerStats(catcherId||(1-tpos)).catchingStats.kd3++;
+        console.log(`Kd3 on ${catcherId}`);
         this.advanceBase(0,event,0,parent);
         break;
       case "error":
+        if(!this.inning_stats[this.inning])
+          this.inning_stats[this.inning] = [];
+        if(!this.inning_stats[this.inning][1-this.ballSide])
+          this.inning_stats[this.inning][1-this.ballSide] = {runs:0,hits:0,errors:0};
+        this.inning_stats[this.inning][1-this.ballSide].errors++;
+        const dlen = event.attributes?.defenders?.length ?? 0;
+        if(dlen>0)
+          event.attributes?.defenders?.forEach((d,i)=>{
+          if(d.playerId) return;
+          const defenderId = this.getPosition(1-this.ballSide, d.position);
+          if(!defenderId) return;
+          d.playerId = defenderId;
+          const dstats = this.getPlayerStats(defenderId, 1-this.ballSide);
+          if(dstats.name != defenderId)
+            d.player = dstats.name;
+          if(d.error)
+            dstats.fielding_error();
+        });
         event.offense = "E";
         this.advanceBases(event,false,parent);
         this.advanceBase(0,event,1,parent);
@@ -793,8 +1071,24 @@ class game {
       default:
         console.log(`New ball_in_play playResult: ${event.attributes.playResult}`);
     }
+    event.counts = {...this.counts};
+    if(event.attributes?.defenders?.length)
+      event.defenderId = this.getPosition(1-this.ballSide, event.attributes.defenders[0].position);
     if(event.defense)
+    {
       block.defense = event.defense;
+      if(event.defenderId)
+        event.defender = this.getPlayerName(event.defenderId);
+      if(event.attributes.defenders?.length)
+        event.position = event.attributes.defenders[0].position;
+    }
+    if(!event.pitcherId)
+      event.pitcherId = this.getPosition(1-this.ballSide, 'P');
+    event.pitcher = this.getPlayerName(event.pitcherId);
+    if(!event.batterId)
+      event.batterId = this.lineup[1-this.ballSide][this.currentBatter[1-this.ballSide]];
+    event.player = this.getPlayerName(event.batterId);
+    playerStats.ball_in_play({...event, gameId: this.id, streamId: this.game_stream?.id, opponentId: this.teams[1-this.ballSide].id});
     this.resetCount();
     this.nextBatter(true);
   }
@@ -812,24 +1106,54 @@ class game {
       event.attributes.runnerId = this.bases[event.attributes.base-1];
     }
     const block = this.scorebooks.getCurrentBlock(tpos, event.attributes.runnerId);
+    const stats = this.getPlayerStats(event.attributes.runnerId, this.ballSide);
+    const pitcherStats = this.getPlayerStats(this.getPosition(1-tpos, 'P')||1-this.ballSide, 1-this.ballSide);
+    const catcherStats = this.getPlayerStats(this.getPosition(1-tpos, 'C')||1-this.ballSide, 1-this.ballSide);
+    if(block.outs||block.runs) {
+      console.warn("Base running after out?", block);
+      return;
+    }
     switch(event.attributes.playType)
     {
       case 'attempted_pickoff':
         return true;
       case 'stole_base':
         event.offense = "SB";
+        stats.battingStats.sb++;
+        catcherStats.catchingStats.sb++;
+        pitcherStats.pitchingStats.sb++;
         break;
       case 'wild_pitch':
         event.offense = "WP";
+        stats.battingStats.wp++;
+        pitcherStats.pitchingStats.wp++;
         break;
       case 'passed_ball':
         event.offense = "PB";
+        stats.battingStats.pb++;
+        catcherStats.catchingStats.pb++;
         break;
       case 'caught_stealing':
         event.offense = "CS";
+        stats.battingStats.cs++;
+        if(event?.attributes?.defenders?.length)
+        {
+          const dlen = event.attributes.defenders.length;
+          event.attributes.defenders.forEach((d,di)=>{
+            if(di == dlen - 1)
+            {
+              if(d.position=='C')
+                catcherStats.catchingStats.ccs++;
+              else if(event.attributes.defenders[event.attributes.defenders.length-1].position=='P')
+                pitcherStats.pitchingStats.cs++;
+              else this.getPlayerStats(this.getPosition(d.position, 1-this.ballSide)||(1-this.ballSide)).fieldingStats.cs++;
+            } else this.getPlayerStats(this.getPosition(d.position, 1-this.ballSide)||(1-this.ballSide)).fieldingStats.a++;
+          });
+        }
         break;
       case 'advanced_on_error':
         event.offense = "E";
+        this.inning_stats[this.inning][1-tpos].errors++;
         break;
     }
     let lastPos = this.events.length - 1;
@@ -846,7 +1170,7 @@ class game {
         if(event.attributes?.playFlavor?.indexOf("tagged_up")>-1)
         {
           const peek = parent.peek;
-          console.log("tag up", {peek:JSON.stringify(parent.peek)});
+          // console.log("tag up", {peek:JSON.stringify(parent.peek)});
           // if(event.attributes.base==4||!(peek?.event_data?.attributes?.playFlavor?.indexOf("tagged_up")>-1))
           block.bases[event.attributes.base-1] = "TU";
           if(peek.find((e)=>e?.attributes?.runnerId==event.attributes.runnerId&&e.attributes.playFlavor=="tagged_up"))
@@ -856,6 +1180,7 @@ class game {
         //   block.bases[event.attributes.base-1] = lastEvent.offense ?? "SB";
         if(event.attributes.base==4)
         {
+          this.getPlayerStats(lastEvent.playerId, this.ballSide).battingStats.rbi++;
           if(lastEvent.rbis)
             lastEvent.rbis++;
           else lastEvent.rbis = 1;
@@ -872,6 +1197,7 @@ class game {
       case 'advanced_on_error':
         this.advanceBase(event.attributes.base-1,event,1,parent);
         break;
+      case 'other_out':
       case 'out_on_appeal':
       case 'out_on_last_play':
       case 'caught_stealing':
@@ -883,9 +1209,11 @@ class game {
         block.outs = event.outs;
         if(event.runs) {
           this.runs[this.ballSide]--;
+          this.inning_stats[this.inning][this.ballSide]--;
           event.runs = 0;
         } else if(lastEvent.runs) {
           this.runs[this.ballSide]--;
+          this.inning_stats[this.inning][this.ballSide]--;
           lastEvent.runs = 0;
           if(lastEvent.rbis)
             lastEvent.rbis--;
@@ -903,8 +1231,10 @@ class game {
             block.bases[event.attributes.base] = "TP";
           else if(event.attributes.playFlavor=="doubled_off")
             block.bases[event.attributes.base] = "DP";
-          else if(["fielders_choice"].indexOf(lastEvent?.playResult)==-1)
+          else if(["fielders_choice"].indexOf(lastEvent?.attributes?.playResult)==-1)
             block.bases[event.attributes.base-1] = "PO";
+          else if(parent?.events?.find((e)=>e.attributes?.playResult=="fielders_choice"))
+            block.bases[event.attributes.base] = "FC";
         }
         else if(event.attributes.playType=="out_on_appeal")
           block.bases[event.attributes.base-1] = "OOA";
@@ -934,9 +1264,9 @@ class game {
         if(defenders)
           event.shortResult += defenders;
         event.shortResult += " | " + this.getLongOuts();
-
+        block.events.push(event);
         let base = this.getRunnerBase(event.attributes.runnerId);
-        if(base===false&&typeof(event.attributes.base)!="undefined")
+        if(typeof(event.attributes.base)!="undefined")
           base = event.attributes.base;
         // console.log(`Out on ${base}B: ${event.attributes.runnerId} => `+this.bases.join("->"));
         this.bases[base] = false;
@@ -946,6 +1276,7 @@ class game {
         if(lastEvent.runs)
         {
           this.runs[this.ballSide]--;
+          this.inning_stats[this.inning][this.ballSide].runs--;
         }
         lastEvent.runs = 0;
         if(lastEvent.rbis)
@@ -974,6 +1305,29 @@ class game {
         this.advanceBase(event.attributes.base-1,event,1,parent);
         console.warn(`New base_running playType: ${event.attributes.playType}`);
     }
+  }
+  handleHomeRun(event) {
+    const defender = {"error":false,"location":{"x":0,"y":0},"position":''};
+    switch(event.attributes.hrLocation){
+      case 'right_field':
+        defender.position = 'RF';
+        defender.location.x = 320;
+        defender.location.y = 40;
+        break;
+      case 'left_field':
+        defender.position = 'LF';
+        defender.location.x = 10;
+        defender.location.y = 40;
+        break;
+      case 'center_field':
+        defender.position = 'CF';
+        defender.location.x = 160;
+        defender.location.y = -20;
+        break;
+      default:
+        console.warn(`New HR location: ${event.attributes.hrLocation}`);
+    }
+    event.attributes.defenders.push(defender);
   }
   getShortEvent(event) {
     if(event.code == "pitch")
@@ -1101,7 +1455,13 @@ class game {
         event.defense = `SAC${defenders}`;
         if((this.bases[1]||this.bases[2]||this.bases[3])&&this.counts.outs<2)
         {
-          event.offense = `SAC${defenders.replace("G","").replace("L","")}`;
+          event.offense = `SAC`;
+          if(typeof(defenders)=="number")
+            event.offense += defenders;
+          else if(typeof(defenders)=="string")
+            event.offense += defenders.replace("G","").replace("L","");
+          else
+            console.warn("Bad defenders", defenders);
         } else event.offense = event.defense;
         if(event.shortResult) event.shortResult = `${event.offense} | ${event.shortResult}`;
         else event.shortResult = event.defense;
@@ -1176,12 +1536,12 @@ class game {
   }
   findPlayer(id)
   {
-    if(typeof(id)=="object") return id;
+    if(typeof(id)=="object"&&id&&id.first_name) return id;
     let found = false;
-    for(var team in this.teams)
+    for(var team of this.teams)
     {
       if(team?.players)
-        for(var player in team.players)
+        for(var player of team.players)
           if(player.id==id)
           {
             found = player;
@@ -1198,11 +1558,11 @@ class game {
     if(found.number)
       long = `#${found.number} `;
     if(found.first_name&&found.last_name)
-      long = `${out}${found.first_name} ${found.last_name}`;
+      long = `${long}${found.first_name} ${found.last_name}`;
     else if(found.first_name)
-      long = `${out}${found.first_name}`;
+      long = `${long}${found.first_name}`;
     else if(found.last_name)
-      long = `${out}${found.last_name}`;
+      long = `${long}${found.last_name}`;
     if(!!long)
       found.long_name = long;
     return found;

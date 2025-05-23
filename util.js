@@ -27,6 +27,19 @@ Util.prettify = (o, prefix) => {
     return `{\n${prefix}${ret.join(",\n")}\n${prefix}}`;
   }
 };
+Util.addIP = (ip1, ip2) =>
+{
+  let outs = Math.round((ip1 % 1) * 10);
+  outs += Math.round((ip2 % 1) * 10);
+  let fulls = Math.floor(ip1);
+  fulls += Math.floor(ip2);
+  if(outs >= 3)
+  {
+    fulls++;
+    outs -= 3;
+  }
+  return fulls + (outs * 0.1);
+};
 Util.tablify = (o,level) => {
   if(typeof(o)=="string"&&["[","{"].indexOf(o[0])>-1)
   {
@@ -34,6 +47,7 @@ Util.tablify = (o,level) => {
     if(j) o = j;
   }
   if(typeof(o)!="object") return JSON.stringify(o);
+  if(!o) return o;
   if(!level) level = 0;
   const ret = [];
   ret.push(`<table class="${!level?"tablify":""}">`)
@@ -57,7 +71,7 @@ Util.tablify = (o,level) => {
       const comma = i < keys.length - 1 ? "," : "";
       if(typeof(o[k])=="object") {
         complex = true;
-        const ccount = Object.values(o[k]).length;
+        // const ccount = Object.values(o[k]).length;
         const cret = Util.tablify(o[k],level+1);
         ret.push(`<tr><td class="key ${level>2?"closed":"open"}">"${k}":</td>
             <td data-level="${level}" class="value ${level>2?"hide":""}">${cret}${comma}</td>
