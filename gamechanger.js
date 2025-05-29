@@ -846,7 +846,6 @@ class gamechanger {
               res.write(`</td>`);
               book.columns.forEach((col,colin)=>{
                 if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
-                let block = col.plays.find((b)=>b.playerId==playerId&&!b.used);
                 if(!block&&colin==0)
                   block = col.plays.find((b)=>b.row==benchPos&&!b.used);
                 if(block)

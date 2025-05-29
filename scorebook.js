@@ -301,7 +301,7 @@ class scorebooks {
     if(block.location?.length)
     {
       let stroke = "none";
-      if(block.playType=="ground_ball")
+      if(block.playType=="ground_ball"||block.playType=="bunt")
         stroke = "1.2,2.4"
       marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:${stroke};stroke-dashoffset:0;stroke-opacity:1" d="m60 85`;
       let x2 = (block.location[0]-160)/7;

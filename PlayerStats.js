@@ -69,18 +69,20 @@ class PlayerStats {
       tf2: 0
     };
     this.fieldingStats = {
+      /** Total Touches */
+      tt: 0,
       /** Total Chances */
       tc: 0,
       /** Assists */
       a: 0,
+      /** Errors */
+      e: 0,
       /** Put Outs */
       po: 0,
       /** Air Outs (Fly/Line) */
       ao: 0,
       /** Unassisted Put Outs */
       upo: 0,
-      /** Errors */
-      e: 0,
       /** Runners Caught Stealing */
       cs: 0,
       /** Double Plays */
@@ -91,7 +93,9 @@ class PlayerStats {
     this.pitchingStats = {
       /** Inning Pitched */
       ip: 0,
+      /** Games Pitched */
       gp: 0,
+      /** Games Started */
       gs: 0,
       /** Batters Faced */
       bf: 0,
@@ -254,11 +258,14 @@ class PlayerStats {
   }
   cleanEvent(event) {
     const r = {};
-    ['gameId','opponentId','offense','defense','createdAt','batterId','player','pitcher','defender','position'].forEach((k)=>{if(typeof(event[k])!="undefined")r[k]=event[k];});
+    ['gameId','teamId','opponentId','offense','defense','createdAt','batterId','player','pitcher','defender','position','inning','out','outs'].forEach((k)=>{if(typeof(event[k])!="undefined")r[k]=event[k];});
     if(event.attributes)
     {
       if(event.attributes.defenders?.length)
+      {
         r.location = event.attributes.defenders[0].location;
+        r.position = event.attributes.defenders[event.attributes.defenders.length-1].position;
+      }
       r.playType = event.attributes.playType;
     }
     return r;
@@ -271,8 +278,8 @@ class PlayerStats {
       this.battingStats.tb += (bases + 1);
       if(event.counts?.strikes==2)
         this.battingStats.h2s++;
-      this.battingEvents.push(this.cleanEvent(event));
     }
+    this.battingEvents.push(this.cleanEvent(event));
     if (event.attributes.playType) {
       if (event.attributes.playType.indexOf("fly") > -1)
         this.battingStats.tfl++;
@@ -352,10 +359,13 @@ class PlayerStats {
   fielding_play(event, defender)
   {
     // console.log(`Fielding play`, {defender,event});
-    if(defender.error) this.fielding_error();
     const ev = {...this.cleanEvent(event),...defender};
     if(ev.playerId) delete ev.playerId;
-    this.fieldingEvents.push(ev);
+    const prev = this.fieldingEvents.findIndex((fe)=>fe.createdAt==event.createdAt);
+    if(prev==-1)
+      this.fieldingEvents.push(ev);
+    else
+      return this.fieldingEvents[prev] = ev;
     const dlen = event.attributes.defenders.length;
     if(event.attributes.extendedPlayResult=="double_play")
       this.fieldingStats.dp++;
@@ -364,11 +374,12 @@ class PlayerStats {
     if(defender.position=='C')
     {
       if(defender.error) this.catchingStats.e++;
-      if(defender.putout)
+      else if(defender.putout)
         this.catchingStats.cs++;
-      else
+      else if(defender.assist)
         this.catchingStats.a++;
     } else {
+      this.fieldingStats.tt++;
       if(defender.putout)
       {
         this.fieldingStats.po++;
@@ -376,17 +387,11 @@ class PlayerStats {
           this.fieldingStats.ao++;
         else if(dlen==1)
           this.fieldingStats.upo++;
-      }
-      else this.fieldingStats.a++;
+      } else if(defender.assist)
+        this.fieldingStats.a++;
+      else if(defender.error)
+        this.fieldingStats.e++;
     }
-    return this;
-  }
-  fielding_error() {
-    this.fieldingStats.e++;
-    return this;
-  }
-  putout() {
-    this.fieldingStats.po++;
     return this;
   }
 }
@@ -446,7 +451,7 @@ exports.PlayerStatTitles = {
   },
   pitchingStats: {
     ip: "Innings Pitched",
-    gp: "Games Played",
+    gp: "Games Pitched",
     gs: "Games Started",
     bf: "Batters Faced",
     "#P": "Total Pitches",

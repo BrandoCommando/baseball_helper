@@ -196,7 +196,7 @@ app.get('/stats', bb_session, async(req,res)=>{
   if(req.query?.player)
     await cache.hget(`stats_${req.cookies.gc_email}`, req.query.player)
       .then(async(data)=>{
-        const allStats = JSON.parse(data);
+        let allStats = JSON.parse(data);
         if(!allStats) {
           console.error("Bad Stats!", data);
           return res.status(400).send("Bad Stats");
@@ -205,8 +205,37 @@ app.get('/stats', bb_session, async(req,res)=>{
         const games = Object.keys(allStats);
         for(var gameId of games) {
           // console.log(gameId,allStats[gameId]);
+          const game = await gc.getGameData(gameId);
+          if(game?.event?.event?.start&&!!req.query.solo)
+            if(new Date(allStats[gameId].game?.event?.event?.start?.datetime).getFullYear()!=req.query.solo)
+            {
+              delete allStats[gameId];
+              continue;
+            }
+          if(game?.teams?.length&&!!req.query.teamId)
+            if(!game.teams.find((t)=>req.query.teamId.indexOf(t.id)>-1))
+            {
+              delete allStats[gameId];
+              continue;
+            }
           totalStats.accumulate(allStats[gameId]);
-          allStats[gameId].game = await gc.getGameData(gameId);
+          allStats[gameId].game = game;
+        }
+        if(req.query.year)
+        {
+          const yearStats = {};
+          for(var gameId of games)
+          {
+            if(!allStats[gameId]) continue;
+            let gyear = '2025';
+            if(allStats[gameId].game?.event?.event?.start)
+              gyear = new Date(allStats[gameId].game?.event?.event?.start?.datetime).getFullYear();
+            if(!yearStats[gyear])
+              yearStats[gyear] = new PlayerStats(allStats[gameId]);
+            else
+              yearStats[gyear].accumulate(allStats[gameId]);
+          }
+          allStats = yearStats;
         }
         if(req.query?.format=='json')
           return res.send({totalStats:totalStats.toJson(),allStats});
