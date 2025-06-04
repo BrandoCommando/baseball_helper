@@ -27,7 +27,10 @@ class gamechanger {
       return e.flatMap(this.flatten);
     switch(typeof e) {
       case "object":
-        return e && Object.keys(e).sort().flatMap((t)=>{return this.flatten(e[t]);}) || ["null"];
+        if(!e) return ["null"];
+        let flat = !Object.keys(e).find((k)=>typeof(e[k])=="object");
+        if(!flat) return [JSON.stringify(e)];
+        else return Object.keys(e).sort().flatMap((t)=>this.flatten(e[t]));
       case "string":
         return [e];
       case "boolean":
@@ -59,6 +62,7 @@ class gamechanger {
     if(action!="auth"&&!this.token)
       await this.startAuth();
     if(action!="auth"&&!this.token) return false;
+    if(typeof(action)=="string"&&action.startsWith('/')) action = action.substring(1);
     const headers = {
       "accept-language": "en-US,en;q=0.9",
       "cache-control": "no-cache",
@@ -108,10 +112,12 @@ class gamechanger {
     const method = post ? "POST" : "GET";
     const opts = {headers,method,mode:"cors"};
     if(post) opts.body = JSON.stringify(post);
-    const rheaders = [];
+    const rheaders = {};
     console.log(action);
     const result = await fetch("https://api.team-manager.gc.com/"+action, opts)
       .then((r)=>{
+        if(!r.ok&&r.headers)
+          r.headers.forEach((val,key)=>rheaders[key]=val);
         let isJson = false;
         if(r.headers.has("content-type")&&r.headers.get("content-type").indexOf("json")>-1)
           isJson = true;
@@ -120,8 +126,22 @@ class gamechanger {
         if(isJson) return r.json();
         return r.text();
       });
-    this.requests.push({request:action,post,response:result});
+    
+    this.requests.push({request:action,post,response:result,headers:rheaders});
     return result;
+  }
+  async sendStreamEvent(stream_id,sequence_number,data)
+  {
+    const game_stream_event = {
+      id:Util.uuid(),
+      stream_id,
+      sequence_number,
+      event_data:JSON.stringify({
+        id:Util.uuid(),
+        createdAt:Date.now(),
+        ...data
+        })};
+    return this.fetchApi({game_stream_event},'game-stream-events');
   }
   async getApi(action,nocache,headers)
   {
@@ -214,9 +234,9 @@ class gamechanger {
     if(challenge?.type=="password-required")
     {
       let password = this.password;
-      if(challenge.password_params)
+      if(challenge.password_params?.salt)
         password = bcrypt.hashSync(password, challenge.password_params.salt);
-      if(challenge.challenge_params)
+      if(challenge.challenge_params?.salt)
         password = bcrypt.hashSync(password, challenge.challenge_params.salt);
       access_token = await this.fetchApi({type:"password",password:password});
     } else {

@@ -1,5 +1,8 @@
+const CryptoJS = require("crypto-js");
+
 class Util {}
 
+Util.uuid = () => [4, 2, 2, 2, 6].map((group)=>CryptoJS.lib.WordArray.random(group).toString(CryptoJS.enc.Hex)).join('-');
 Util.prettify = (o, prefix) => {
   if(typeof(o)=="string"&&["[","{"].indexOf(o[0])>-1)
   {
