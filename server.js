@@ -11,7 +11,7 @@ const { PlayerStats } = require('./PlayerStats');
 const MemoryStore = require('memorystore')(session);
 const RedisStore = require('connect-redis').default;
 const bb_session = session(
-  {secret:"baseball",name:"baseball",saveUninitialized:false,resave:true,cookie:{secure:false,httpOnly:true,maxAge:3600000
+  {secret:"baseball",name:"baseball",saveUninitialized:false,resave:true,cookie:{secure:false,httpOnly:true,maxAge:24*60*60*1000
   ,store:new RedisStore({prefix:"Yermom",client:new Db("Redis").createClient(true)})
   }});
 
@@ -26,6 +26,8 @@ app.use(express.urlencoded({extended:true}));
  * @param {Response} res 
  */
 function showLogin(req,res) {
+  if(res.headersSent) return;
+  if(req.headers.accept?.indexOf("html")==-1) res.status(302).header("Location: /login").send({error:"No Login"});
   if(!res.headersSent)
     res.send(`
   <!doctype html>
@@ -280,7 +282,60 @@ app.get('/', bb_session, async(req,res)=>{
   }
   showLogin(req,res);
   });
-
+app.get('/refresh', bb_session, async(req,res)=>{
+  if(req.cookies?.gc_email)
+  {
+    const cache = new Cache(req, res);
+    const gc = new GameChanger(req.cookies.gc_email, null, cache);
+    const out = {token:await gc.getToken()};
+    out.refresh = await gc.refreshToken();
+    res.send(out);
+  }
+  if(!res.headersSent)
+  {
+    res.redirect('/login');
+    res.send({"error":"no login"});
+  }
+});
+app.post('/send', bb_session, async(req,res)=>{
+  if(req.cookies?.gc_email)
+  {
+    const cache = new Cache(req,res);
+    const gc = new GameChanger(req.cookies.gc_email, null, cache);
+    const token = await gc.getToken();
+    if(token?.access)
+    {
+      const me = await gc.getApi("me/user", true);
+      if(me.id)
+      {
+        // console.log(`Logged in with ${req.cookies.gc_email}`, me);
+        if(req.body.action)
+          res.send(await gc.fetchApi(req.body.body, req.body.action, req.body.headers));
+        else if(req.body.stream_id) {
+          let sequence_number = req.body.sequence_number;
+          const event_data = req.body.event_data ?? {};
+          if(req.body.code)
+            event_data.code = req.body.code;
+          if(req.body.attributes)
+            event_data.attributes = req.body.attributes;
+          if(!sequence_number)
+          {
+            const events = await gc.fetchApi(false, `game-streams/${req.body.stream_id}/events`);
+            sequence_number = [...events].pop().sequence_number + 1;
+          }
+          res.send(await gc.sendStreamEvent(req.body.stream_id, sequence_number, event_data));
+        }
+      } else console.warn("Invalid user", me);
+      // else res.clearCookie("gc_token");
+    } else {
+      console.warn("Invalid token", token);
+    }
+  }
+  showLogin(req,res);
+});
+app.get('/login', bb_session, async(req,res)=>{
+  showLogin(req,res);
+});
 app.post('/login', bb_session, async(req,res)=>{
   const cache = new Cache(req, res);
   if(req.body.user&&req.body.pass)
@@ -291,7 +346,9 @@ app.post('/login', bb_session, async(req,res)=>{
     if(req.body.code) gc.code = req.body.code;
     console.log("About me?", await gc.getApi("me/user",true));
   }
-  res.redirect("/");
+  if(req.headers.referer&&req.headers.referer.indexOf("/login")==-1)
+    res.redirect(req.headers.referer);
+  else res.redirect('/');
 });
 app.get('/logout', bb_session, async(req,res)=>{
   const cache = new Cache(req, res);
