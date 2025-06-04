@@ -184,7 +184,7 @@ class gamechanger {
   }
   async refreshToken()
   {
-    const access_token = this.fetchApi({type:"refresh"});
+    const access_token = await this.fetchApi({type:"refresh"});
     if(access_token?.type=="token")
     {
       access_token.access.expiry = new Date(access_token.access.expires*1000);
