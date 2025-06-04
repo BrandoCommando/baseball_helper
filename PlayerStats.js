@@ -365,34 +365,40 @@ class PlayerStats {
     if(prev==-1)
       this.fieldingEvents.push(ev);
     else
-      return this.fieldingEvents[prev] = ev;
+      return this.fieldingEvents[prev].short;
+    const short = {playerId:event.playerId};
     const dlen = event.attributes.defenders.length;
     if(event.attributes.extendedPlayResult=="double_play")
-      this.fieldingStats.dp++;
+      short.dp = ++this.fieldingStats.dp;
     else if(event.attributes.extendedPlayResult=="triple_play")
-      this.fieldingStats.tp++;
+      short.tp = ++this.fieldingStats.tp;
     if(defender.position=='C')
     {
-      if(defender.error) this.catchingStats.e++;
+      if(defender.error) short.catch_error = ++this.catchingStats.e;
       else if(defender.putout)
-        this.catchingStats.cs++;
+        short.catch_putout = ++this.catchingStats.cs;
       else if(defender.assist)
-        this.catchingStats.a++;
+        short.catch_assist = ++this.catchingStats.a;
     } else {
-      this.fieldingStats.tt++;
+      short.tt = ++this.fieldingStats.tt;
       if(defender.putout)
       {
-        this.fieldingStats.po++;
+        short.putout = ++this.fieldingStats.po;
         if(event.attributes.playType&&(event.attributes.playType.indexOf("line")>-1||event.attributes.playType.indexOf("fly")>-1))
-          this.fieldingStats.ao++;
+          short.airout = ++this.fieldingStats.ao;
         else if(dlen==1)
-          this.fieldingStats.upo++;
+          short.unassisted = ++this.fieldingStats.upo;
       } else if(defender.assist)
-        this.fieldingStats.a++;
+        short.assist = ++this.fieldingStats.a;
       else if(defender.error)
-        this.fieldingStats.e++;
+        short.error = ++this.fieldingStats.e;
     }
-    return this;
+    if(defender.player)
+      short.player = defender.player;
+    else if(defender.playerId)
+      short.playerId = defender.playerId;
+    ev.short = short;
+    return short;
   }
 }
 exports.PlayerStats = PlayerStats;
