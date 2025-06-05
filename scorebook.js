@@ -329,6 +329,18 @@ class scorebooks {
         marks += `<text xml:space="preserve" style="font-weight:700;font-size:19px;font-family:Arial;text-align:center;text-anchor:middle;fill:red;stroke:none;" x="60" y="62" transform="translate(-13.749 -30.811)"><tspan style="font-size:19px;fill:red;text-align:center;stroke:none;" x="60" y="62">${block.defense}</tspan></text>`;
       if(['K','ꓘ'].indexOf(block.defense)>-1&&block.pitcher)
         marks += `<text xml:space'="preserve" style="font-weight:500;font-size:8px;font-family:Arial;text-align:center;text-anchor:middle;fill:red;stroke:none;" x="60" y="72" transform="translate(-13.749 -30.811)"><tspan style="font-size:8px;fill:red;text-align:center;stroke:none;" x="60" y="72">${block.pitcher}</tspan></text>`;
+      else if(block.defense) {
+        let defender = block.defender;
+        if(block.events.length>0&&block.events[block.events.length-1].attributes?.defenders?.length)
+        {
+          const defs = block.events[block.events.length-1].attributes.defenders;
+          if(defs.length>1)
+            defender = defs.map((d,i)=>d.player?d.player.substr(0,d.player.indexOf(" "))+(i<defs.length-1?" + ":""):"").join(" ");
+          else
+            defender = defs[defs.length-1].player || "";
+        }
+        marks += `<text xml:space'="preserve" style="font-weight:500;font-size:7px;font-family:Arial;text-align:center;text-anchor:middle;fill:red;stroke:none;" x="60" y="72" transform="translate(-13.749 -30.811)"><tspan style="font-size:8px;fill:red;text-align:center;stroke:none;" x="60" y="72">${defender}</tspan></text>`;
+      }
     }
     marks = `<svg width="162" height="112" viewBox="0 0 85.713 59.396" xmlns="http://www.w3.org/2000/svg">
         <path style="fill:none;stroke:#1a1a1a;stroke-width:.237034" d="M13.867 30.93h85.476v59.159H13.867z" transform="translate(-13 -30.811)"/>
