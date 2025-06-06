@@ -14,6 +14,7 @@ const bb_session = session(
   {secret:"baseball",name:"baseball",saveUninitialized:false,resave:true,cookie:{secure:false,httpOnly:true,maxAge:24*60*60*1000
   ,store:new RedisStore({prefix:"Yermom",client:new Db("Redis").createClient(true)})
   }});
+const { showTotalStats, writeScripts } = require('./html_generator');
 
 
 app.use(cookieParser());
@@ -137,9 +138,9 @@ app.get('/stats', bb_session, async(req,res)=>{
     {
       res.header('Content-Type', 'text/html');
       res.write(`Total Stats: ${scount}`);
-      res.write(gc.showTotalStats(teamStats, datas, teams));
-      res.write(gc.showTotalStats(ourStats, datas, ourId));
-      gc.writeScripts(res);
+      res.write(showTotalStats(teamStats, datas, teams));
+      res.write(showTotalStats(ourStats, datas, ourId));
+      writeScripts(res);
       res.end();
     }
     if(!res.headersSent)
@@ -181,9 +182,9 @@ app.get('/stats', bb_session, async(req,res)=>{
           return res.header('Content-Type', 'application/json').send({teamStats:teamStats.toJson(),ourStats:ourStats.toJson(),data});
         res.header('Content-Type', 'text/html');
         res.write(`Total Stats: ${scount}`);
-        res.write(gc.showTotalStats(teamStats, data, teamId));
-        res.write(gc.showTotalStats(ourStats, data, ourId));
-        gc.writeScripts(res);
+        res.write(showTotalStats(teamStats, data, teamId));
+        res.write(showTotalStats(ourStats, data, ourId));
+        writeScripts(res);
         res.end();
         if(!res.headersSent)
           res.send({requests:gc.requests,data});
@@ -245,8 +246,8 @@ app.get('/stats', bb_session, async(req,res)=>{
         res.write(`Total Stats: ${Object.keys(allStats).length}`);
         const nas = {};
         // nas[req.query.player] = allStats;
-        res.write(gc.showTotalStats(totalStats, allStats));
-        gc.writeScripts(res);
+        res.write(showTotalStats(totalStats, allStats));
+        writeScripts(res);
         res.end();
       })
       .catch((e)=>{
