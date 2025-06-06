@@ -57,8 +57,8 @@ class gamechanger {
       CryptoJS.enc.Base64.stringify(h.finalize())
   }
   async fetchApi(post, action, oheaders) {
-    if(!this.token) await this.getToken();
     if(!action) action = "auth";
+    if(action!="auth"&&!this.token) await this.getToken();
     if(action!="auth"&&!this.token)
       await this.startAuth();
     if(action!="auth"&&!this.token) return false;
@@ -718,191 +718,6 @@ class gamechanger {
     }
     else if(req.headers.accept?.indexOf("html")>-1)
     {
-      const writeEventHTML = (e) => {
-        let r = e.attributes?.result || e.attributes?.playType || "";
-        let pr = e.shortResult || e.playResult || e.attributes?.playResult || "";
-        const snap = e.snapshot;
-        delete e.snapshot;
-        let player = e.batterId || "";
-        if(e.attributes.runnerId)
-          player = e.attributes.runnerId;
-        else if(e.attributes.playerId)
-          player = e.attributes.playerId;
-        if(typeof(player)=="string")
-          player = gc.findData("player", player);
-        const stamp = e.createdAt ? new Date(e.createdAt).toLocaleTimeString() : "";
-        if(!pr)
-        {
-          if(e.attributes.position) pr = e.attributes.position;
-          else if(e.attributes.base) pr = e.attributes.base;
-          else if(e.code == 'reorder_lineup') {
-            pr = e.attributes.toIndex;
-            r = e.attributes.fromIndex;
-          }
-          else if(typeof(e.attributes.index)!="undefined")
-            r = e.attributes.index;
-          else if(!!e.pitcherId)
-          {
-            const pitcher = gc.findData("player", e.pitcherId);
-            if(typeof(pitcher)=="object")
-              pr = `${pitcher.first_name} ${pitcher.last_name}`;
-          }
-        }
-        if(typeof(player)=="object")
-          player = `${player.first_name} ${player.last_name}`;
-        const deets = Util.tablify(e);
-        res.write(`<tr class="${e.hidden?'hidden':''}"><td>${e.sequence_number}</td>
-          <td>${stamp}</td>
-          <td>${player}</td>
-          <td>${e.code}</td>
-          <td>${r}</td>
-          <td>${pr}</td>
-          <td>${snap}</td>
-          <td><div class="float hide">${deets}</div><button class="togglePrev">Show</button></td></tr>`);
-      }
-      /**
-       * 
-       * @param {Game} game 
-       */
-      const writeScorebook = (game) => {
-        if(game.scorebooks)
-        {
-          res.write(`<div class="summary">`);
-          const hrow = [''];
-          const rows = [[game.teams[0].name],[game.teams[1].name]];
-          const total_stats=[{runs:0,hits:0,errors:0},{runs:0,hits:0,errors:0}];
-          for(var inning=0;inning<9;inning++)
-          {
-            hrow.push(inning+1);
-            for(var side=0;side<=1;side++)
-            {
-              if(!game.inning_stats[inning]||!game.inning_stats[inning][side])
-              {
-                rows[side][inning+1] = "";
-                continue;
-              }
-              for(var stat of ['runs','hits','errors'])
-                total_stats[side][stat] += game.inning_stats[inning][side][stat];
-              rows[side][inning+1] = game.inning_stats[inning][side].runs;
-            }
-          }
-          hrow.push('R');
-          rows[0].push(total_stats[0].runs);
-          rows[1].push(total_stats[1].runs);
-          hrow.push('H');
-          rows[0].push(total_stats[0].hits);
-          rows[1].push(total_stats[1].hits);
-          hrow.push('E');
-          rows[0].push(total_stats[0].errors);
-          rows[1].push(total_stats[1].errors);
-          res.write(`<table border="1"><thead><tr><td>${hrow.join('</td><td>')}</td></tr></thead><tbody>`);
-          for(var side=0;side<=1;side++)
-            res.write(`<tr><td class="teamname">${rows[side].join('</td><td>')}</td></tr>`);
-          res.write(`</table>`);
-          res.write(`</div>`);
-          res.write('<button class="noprint toggleNext">Show Stats</button>');
-          res.write(`<div class="stats hide">`);
-          var stat;
-          for(var side=0;side<=1;side++)
-          {
-            const lineup = [...game.lineup[side]];
-            lineup.push(side);
-            res.write(this.showStats(game.player_stats, lineup, game));
-          }
-          res.write(`</div>`);
-          res.write(`<div class="scorebook">`);
-          for(var side=0;side<=1;side++)
-          {
-            /** @type ScoreBook */
-            const book = game.scorebooks.getBook(side);
-            res.write(`<div class="toggleNext breakup">${game.teams[side].name} (${side?"vs":"@"} ${game.teams[1-side].name}) on ${new Date(game.events[0].createdAt).toLocaleDateString()}</div>
-              <table class="book" border="1" cellpadding="0" cellspacing="0">
-              <thead><tr><td>BO</td><td width="30">#</td><td width="160">Player / POS</td>`);
-            book.columns.forEach((col)=>{
-              if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
-              res.write(`<td>${col.inning}</td>`);
-            });
-            res.write("</tr>\n");
-            for(var benchPos=0;benchPos<game.lineup[side].length;benchPos++)
-            {
-              const playerId = game.lineup[side][benchPos];
-              var player = game.findPlayer(playerId);
-              var found = false;
-              if(!player||player==playerId)
-              {
-                if(game.teams[side].players?.length)
-                  found = [...game.teams[side].players].find((p)=>p.id==playerId);
-                if(found)
-                {
-                  player = `${found.first_name} ${found.last_name}`;
-                }
-              } else if(typeof(player)=="object")
-              {
-                found = player;
-                player = `${player.first_name} ${player.last_name}`;
-              }
-              res.write(`
-                <tr><td>${benchPos+1}</td><td>#${found?.number}</td><td style="padding-right:5px"><a href="/stats?player=${encodeURIComponent(player)}">${player}</a>`);
-              let pos = game.inning_positions[0][side][playerId] ?? "EH";
-              res.write(`<span style="float:right">${pos}</span>`);
-              const ipos = {};
-              let haspos = pos != "EH";
-              for(var inn=1;inn<game.inning_positions.length;inn++)
-              {
-                if(!game.inning_positions[inn]) continue;
-                if(!game.inning_positions[inn][side]) continue;
-                if(game.inning_positions[inn][side][playerId])
-                {
-                  pos = ipos[inn+1] = game.inning_positions[inn][side][playerId];
-                  haspos = true;
-                } else if(Object.values(game.inning_positions[inn][side]).indexOf(pos)>-1)
-                {
-                  pos = ipos[inn+1] = "EH";
-                }
-              }
-              if(haspos)
-                res.write(`<table style="clear:right;float:right;" class="subs" cellpadding="2" cellspacing="0" border="1"><tr><td>${Object.keys(ipos).join('</td><td>')}</td></tr>
-                  <tr><td>${Object.values(ipos).join('</td><td>')}</td></tr></table><div style="clear:both"></div>`);
-              res.write(`</td>`);
-              book.columns.forEach((col,colin)=>{
-                if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
-                if(!block&&colin==0)
-                  block = col.plays.find((b)=>b.row==benchPos&&!b.used);
-                if(block)
-                {
-                  block.used = true;
-                  if(block.pitcherId)
-                  {
-                    const pitcher = this.findData("player", block.pitcherId);
-                    if(typeof(pitcher)=="object"&&pitcher.first_name)
-                      block.pitcher = `${pitcher.first_name} ${pitcher.last_name}`;
-                  }
-                  else {
-                    delete block.pitcherId;
-                    delete block.pitcher;
-                  }
-                }
-                if(block?.top)
-                  res.write(`<td class="top block">`);
-                else
-                  res.write(`<td class="block">`);
-                if(block?.playType||block?.pitches?.length||block?.offense=="PR")
-                {
-                  res.write(`<div class="toggleNext">`);
-                  res.write(ScoreBooks.getScoreHTML(block));
-                  if(block.events?.length)
-                    block.events.forEach((e)=>delete e.snapshotJ);
-                  res.write(`</div><div class="info hide float noprint"><div class="biggin">${Util.tablify(block)}</div></div>`);
-                }
-                res.write(`</td>`);
-              });
-              res.write("</tr>");
-            }
-            res.write(`</table>`);
-          }
-          res.write("</div>");
-        }
-      };
       res.header("Content-Type", "text/html");
       res.write(`<html><head><title>`);
       if(gc.games?.length==1)
@@ -922,9 +737,9 @@ class gamechanger {
         res.write(`<table border="1">`);
         if(out.teams)
           res.write(`<caption>${out.teams[0].name} @ ${out.teams[1].name}</caption>`);
-        out.events.forEach(writeEventHTML);
+        out.events.forEach((e)=>this.writeEventHTML(e,res));
         res.write("</table>");
-        writeScorebook(out);
+        this.writeScorebook(out, res);
       }
       if(gc.games)
       {
@@ -952,9 +767,9 @@ class gamechanger {
           res.write(`<div class="noprint"><a href="/">Back to Teams</a></div>`);
           res.write(`<div class="toggleNext"><h1><a href="/stats?team=${t1.id}">${t1.name}</a> (${game.runs[0]}) @ <a href="/stats?team=${t2.id}">${t2.name}</a> (${game.runs[1]}) on ${new Date(game.events[0].createdAt).toDateString()}</h1></div>`);
           res.write(`<table border="1" class="hide">`);
-          game.events.forEach(writeEventHTML);
+          game.events.forEach((e)=>this.writeEventHTML(e,res));
           res.write("</table>");
-          writeScorebook(game);
+          this.writeScorebook(game, res);
         });
       }
       this.writeScripts(res);
@@ -962,6 +777,204 @@ class gamechanger {
       res.write(`</body></html>`);
       res.end();
     } else res.send(gc);
+  }
+
+  writeEventHTML(e, res) {
+    let r = e.attributes?.result || e.attributes?.playType || "";
+    let pr = e.shortResult || e.playResult || e.attributes?.playResult || "";
+    const snap = e.snapshot;
+    delete e.snapshot;
+    let player = e.batterId || "";
+    if(e.attributes.runnerId)
+      player = e.attributes.runnerId;
+    else if(e.attributes.playerId)
+      player = e.attributes.playerId;
+    if(typeof(player)=="string")
+      player = this.findData("player", player);
+    const stamp = e.createdAt ? new Date(e.createdAt).toLocaleTimeString() : "";
+    if(!pr)
+    {
+      if(e.attributes.position) pr = e.attributes.position;
+      else if(e.attributes.base) pr = e.attributes.base;
+      else if(e.code == 'reorder_lineup') {
+        pr = e.attributes.toIndex;
+        r = e.attributes.fromIndex;
+      }
+      else if(typeof(e.attributes.index)!="undefined")
+        r = e.attributes.index;
+      else if(!!e.pitcherId)
+      {
+        const pitcher = this.findData("player", e.pitcherId);
+        if(typeof(pitcher)=="object")
+          pr = `${pitcher.first_name} ${pitcher.last_name}`;
+      }
+    }
+    if(typeof(player)=="object")
+      player = `${player.first_name} ${player.last_name}`;
+    const deets = Util.tablify(e);
+    res.write(`<tr class="${e.hidden?'hidden':''}"><td>${e.sequence_number}</td>
+      <td>${stamp}</td>
+      <td>${player}</td>
+      <td>${e.code}</td>
+      <td>${r}</td>
+      <td>${pr}</td>
+      <td>${snap}</td>
+      <td><div class="float hide">${deets}</div><button class="togglePrev">Show</button></td></tr>`);
+  }
+
+  /**
+   * 
+   * @param {Game} game 
+   */
+  writeScorebook(game, res) {
+    if(game.scorebooks)
+    {
+      res.write(`<div class="summary">`);
+      const hrow = [''];
+      const rows = [[game.teams[0].name],[game.teams[1].name]];
+      const total_stats=[{runs:0,hits:0,errors:0},{runs:0,hits:0,errors:0}];
+      for(var inning=0;inning<9;inning++)
+      {
+        hrow.push(inning+1);
+        for(var side=0;side<=1;side++)
+        {
+          if(!game.inning_stats[inning]||!game.inning_stats[inning][side])
+          {
+            rows[side][inning+1] = "";
+            continue;
+          }
+          for(var stat of ['runs','hits','errors'])
+            total_stats[side][stat] += game.inning_stats[inning][side][stat];
+          rows[side][inning+1] = game.inning_stats[inning][side].runs;
+        }
+      }
+      hrow.push('R');
+      rows[0].push(total_stats[0].runs);
+      rows[1].push(total_stats[1].runs);
+      hrow.push('H');
+      rows[0].push(total_stats[0].hits);
+      rows[1].push(total_stats[1].hits);
+      hrow.push('E');
+      rows[0].push(total_stats[0].errors);
+      rows[1].push(total_stats[1].errors);
+      res.write(`<table border="1"><thead><tr><td>${hrow.join('</td><td>')}</td></tr></thead><tbody>`);
+      for(var side=0;side<=1;side++)
+        res.write(`<tr><td class="teamname">${rows[side].join('</td><td>')}</td></tr>`);
+      res.write(`</table>`);
+      res.write(`</div>`);
+      res.write('<button class="noprint toggleNext">Show Stats</button>');
+      res.write(`<div class="stats hide">`);
+      var stat;
+      for(var side=0;side<=1;side++)
+      {
+        const lineup = [...game.lineup[side]];
+        lineup.push(side);
+        res.write(this.showStats(game.player_stats, lineup, game));
+      }
+      res.write(`</div>`);
+      res.write(`<div class="scorebook">`);
+      for(var side=0;side<=1;side++)
+      {
+        /** @type ScoreBook */
+        const book = game.scorebooks.getBook(side);
+        res.write(`<div class="toggleNext breakup">${game.teams[side].name} (${side?"vs":"@"} ${game.teams[1-side].name}) on ${new Date(game.events[0].createdAt).toLocaleDateString()}</div>
+          <table class="book" border="1" cellpadding="0" cellspacing="0">
+          <thead><tr><td>BO</td><td width="30">#</td><td width="160">Player / POS</td>`);
+        book.columns.forEach((col)=>{
+          if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
+          res.write(`<td>${col.inning}</td>`);
+        });
+        res.write("</tr>\n");
+        for(var benchPos=0;benchPos<game.lineup[side].length;benchPos++)
+        {
+          const playerId = game.lineup[side][benchPos];
+          var player = game.findPlayer(playerId);
+          var found = false;
+          if(!player||player==playerId)
+          {
+            if(game.teams[side].players?.length)
+              found = [...game.teams[side].players].find((p)=>p.id==playerId);
+            if(found)
+            {
+              player = `${found.first_name} ${found.last_name}`;
+            }
+          } else if(typeof(player)=="object")
+          {
+            found = player;
+            player = `${player.first_name} ${player.last_name}`;
+          }
+          res.write(`
+            <tr><td>${benchPos+1}</td><td>#${found?.number}</td><td style="padding-right:5px"><a href="/stats?player=${encodeURIComponent(player)}">${player}</a>`);
+          let pos = game.inning_positions[0][side][playerId] ?? "EH";
+          res.write(`<span style="float:right">${pos}</span>`);
+          const ipos = {};
+          let haspos = pos != "EH";
+          for(var inn=1;inn<game.inning_positions.length;inn++)
+          {
+            if(!game.inning_positions[inn]) continue;
+            if(!game.inning_positions[inn][side]) continue;
+            if(game.inning_positions[inn][side][playerId])
+            {
+              pos = ipos[inn+1] = game.inning_positions[inn][side][playerId];
+              haspos = true;
+            } else if(Object.values(game.inning_positions[inn][side]).indexOf(pos)>-1)
+            {
+              pos = ipos[inn+1] = "EH";
+            }
+          }
+          if(haspos)
+            res.write(`<table style="clear:right;float:right;" class="subs" cellpadding="2" cellspacing="0" border="1"><tr><td>${Object.keys(ipos).join('</td><td>')}</td></tr>
+              <tr><td>${Object.values(ipos).join('</td><td>')}</td></tr></table><div style="clear:both"></div>`);
+          res.write(`</td>`);
+          book.columns.forEach((col,colin)=>{
+            if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
+            let block = col.plays.find((b)=>b.playerId==playerId&&!b.used&&(b?.playType||b?.pitches?.length||b?.offense=="PR"));
+            if(!block&&colin==0)
+              block = col.plays.find((b)=>b.row==benchPos&&!b.used);
+            if(block)
+            {
+              block.used = true;
+              if(block.pitcherId)
+              {
+                const pitcher = this.findData("player", block.pitcherId);
+                if(typeof(pitcher)=="object"&&pitcher.first_name)
+                  block.pitcher = `${pitcher.first_name} ${pitcher.last_name}`;
+              }
+              else {
+                delete block.pitcherId;
+                delete block.pitcher;
+              }
+            }
+            if(block?.top)
+              res.write(`<td class="top block">`);
+            else
+              res.write(`<td class="block">`);
+            if(block?.playType||block?.pitches?.length||block?.offense=="PR")
+            {
+              res.write(`<div class="toggleNext">`);
+              res.write(ScoreBooks.getScoreHTML(block));
+              if(block.events?.length)
+                block.events.forEach((e)=>delete e.snapshotJ);
+              res.write(`</div><div class="info hide float noprint"><div class="biggin">${Util.tablify(block)}</div></div>`);
+            } else if(block!=undefined) console.warn(`Bad Block in ${col}/${colin}?`, block);
+            res.write(`</td>`);
+          });
+          res.write("</tr>");
+        }
+        res.write(`</table>`);
+        const unused = book.columns.reduce((prev,col,coli)=>{
+          col.plays.forEach((block)=>{
+            block.coli = coli;
+            if(!block.used)
+              prev.push(block);
+          });
+          return prev;
+        },[]);
+        // if(unused.length) console.warn(`Unused blocks: ${unused.length}`, unused);
+      }
+
+      res.write("</div>");
+    }
   }
   /**
    * 
