@@ -93,7 +93,7 @@ class Cache {
   hset(key,field,val)
   {
     return new Promise((resolve,reject)=>{
-      if(val===undefined||field===undefined||key===undefined) reject('Invalid params');
+      if(val===undefined||field===undefined||key===undefined) reject(`Invalid params: ${key}, ${field}, ${val}`);
       var setting = val;
       if(typeof(val)=="number") setting = "" + val;
       if(typeof(val)!="string") setting = JSON.stringify(val);
@@ -108,9 +108,35 @@ class Cache {
         return resolve(1);
       }
 			return client.sendCommand(['hset',key,field,setting])
+        .then((res)=>resolve({status:res,setting}))
+        .catch((e)=>reject(e));
+    });
+  }
+  hsetall(key,values)
+  {
+    return new Promise((resolve,reject)=>{
+      const cmd = ['hset',key];
+      for(var field of Object.keys(values))
+      {
+        cmd.push(field);
+        var setting = values[field];
+        if(typeof(setting)=="number") setting = `${setting}`;
+        if(typeof(setting)!="string") setting = JSON.stringify(setting);
+        cmd.push(setting);
+      }
+
+      const client = this.getClient(false);
+      if(!client&&!!this.res) {
+        if(!!this.req.session)
+          this.req.session[`${key}_${field}`] = setting
+        else if(field.indexOf("token")>-1)
+          this.res.cookie(`${key}_${field}`, setting);
+        return resolve(1);
+      }
+			return client.sendCommand(cmd)
         .then((res)=>resolve(res))
         .catch((e)=>reject(e));
-      });
+    });
   }
   hexists(key,field)
   {

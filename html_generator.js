@@ -2,8 +2,10 @@ const { PlayerStats, PlayerStatTitles } = require("./PlayerStats");
 const { Baseball, Game, Team } = require("./baseball");
 const { ScoreBooks } = require("./scorebook");
 const Util = require("./util");
+const { format: formatDate } = require('date-and-time');
 
 function writeEventHTML(e, res, gc) {
+  if(!e.attributes||!e.code) return;
   let r = e.attributes?.result || e.attributes?.playType || "";
   let pr = e.shortResult || e.playResult || e.attributes?.playResult || "";
   const snap = e.snapshot;
@@ -30,11 +32,24 @@ function writeEventHTML(e, res, gc) {
     {
       const pitcher = gc.findData("player", e.pitcherId);
       if(typeof(pitcher)=="object")
-        pr = `${pitcher.first_name} ${pitcher.last_name}`;
+      {
+        if(pitcher.full_name) pr = pitcher.full_name;
+        else
+          pr = `${pitcher.first_name} ${pitcher.last_name}`;
+      }
     }
   }
   if(typeof(player)=="object")
-    player = `${player.first_name} ${player.last_name}`;
+  {
+    if(player.full_name)
+      player = player.full_name
+    else if(player.long_name)
+      player = player.long_name;
+    else if(player.name)
+      player = player.name;
+    else
+      player = `${player.first_name} ${player.last_name}`;
+  }
   const deets = Util.tablify(e);
   res.write(`<tr class="${e.hidden?'hidden':''}"><td>${e.sequence_number}</td>
     <td>${stamp}</td>
@@ -55,7 +70,7 @@ function writeScorebook(game, res, gc) {
   {
     res.write(`<div class="summary">`);
     const hrow = [''];
-    const rows = [[game.teams[0].name],[game.teams[1].name]];
+    const rows = [[game.teams[0].name||game.team.name],[game.teams[1].name||game.team.name]];
     const total_stats=[{runs:0,hits:0,errors:0},{runs:0,hits:0,errors:0}];
     for(var inning=0;inning<9;inning++)
     {
@@ -100,10 +115,19 @@ function writeScorebook(game, res, gc) {
     for(var side=0;side<=1;side++)
     {
       /** @type ScoreBook */
+      const players = game.teams[side].players;
       const book = game.scorebooks.getBook(side);
-      res.write(`<div class="toggleNext breakup">${game.teams[side].name} (${side?"vs":"@"} ${game.teams[1-side].name}) on ${new Date(game.events[0].createdAt).toLocaleDateString()}</div>
+      res.write(`<div class="toggleNext breakup">${game.teams[side].name} (${side?"vs":"@"} ${game.teams[1-side].name}) on `);
+      if(game.event?.event?.start?.datetime)
+        res.write(Util.toLocaleDateTimeString(game.event.event.start.datetime));
+      else
+        res.write(Util.toLocaleDateTimeString(game.events[0].createdAt));
+      res.write(`</div>
         <table class="book" border="1" cellpadding="0" cellspacing="0">
-        <thead><tr><td>BO</td><td width="30">#</td><td width="160">Player / POS</td>`);
+        <thead><tr><td>BO</td><td width="30">#</td>`);
+      res.write(`<td width="160"><span class="toggleNext">Player / POS</span><div class="float hide">`);
+      res.write(`<table><tr><td>${game.lineup[side].map((pid)=>[pid,players.find((p)=>p.id==pid).name].join('</td><td>')).join('</td></tr><tr><td>')}</td></tr></table>`);
+      res.write(`</div></td>`);
       book.columns.forEach((col)=>{
         if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
         res.write(`<td>${col.inning}</td>`);
@@ -118,14 +142,18 @@ function writeScorebook(game, res, gc) {
         {
           if(game.teams[side].players?.length)
             found = [...game.teams[side].players].find((p)=>p.id==playerId);
-          if(found)
-          {
+          if(found?.full_name)
+            player = found.full_name;
+          else if(found?.last_name) {
             player = `${found.first_name} ${found.last_name}`;
           }
         } else if(typeof(player)=="object")
         {
           found = player;
-          player = `${player.first_name} ${player.last_name}`;
+          if(found?.full_name)
+            player = found.full_name;
+          else if(player.last_name)
+            player = `${player.first_name} ${player.last_name}`;
         }
         res.write(`
           <tr><td>${benchPos+1}</td><td>#${found?.number}</td><td style="padding-right:5px"><a href="/stats?player=${encodeURIComponent(player)}">${player}</a>`);
@@ -161,8 +189,17 @@ function writeScorebook(game, res, gc) {
             if(block.pitcherId&&gc?.findData)
             {
               const pitcher = gc.findData("player", block.pitcherId);
-              if(typeof(pitcher)=="object"&&pitcher.first_name)
-                block.pitcher = `${pitcher.first_name} ${pitcher.last_name}`;
+              if(typeof(pitcher)=="object")
+              {
+                if(pitcher.name)
+                  block.pitcher = pitcher.name;
+                else if(pitcher.full_name)
+                  block.pitcher = pitcher.full_name;
+                else if(pitcher.number)
+                  block.pitcher = `#${pitcher.number} ${pitcher.first_name} ${pitcher.last_name}`;
+                else if(pitcher.last_name)
+                  block.pitcher = pitcher.last_name;
+              }
             }
             else {
               delete block.pitcherId;
@@ -179,7 +216,7 @@ function writeScorebook(game, res, gc) {
             res.write(getScoreHTML(block));
             if(block.events?.length)
               block.events.forEach((e)=>delete e.snapshotJ);
-            res.write(`</div><div class="info hide float noprint"><div class="biggin">${Util.tablify(block)}</div></div>`);
+            res.write(`</div><div class="info hide float noprint"><div class="tablify biggin">${Util.tablify(block)}</div></div>`);
           } else if(block!=undefined) console.warn(`Bad Block in ${col}/${colin}?`, block);
           res.write(`</td>`);
         });
@@ -417,16 +454,17 @@ function showStats(player_stats, lineup, game) {
       if(game?.teams)
         for(var side = 0; side<2; side++)
         {
-          found = [...game.teams[side].players].find((p)=>p.id==playerId);
+          if(game.teams[side].players)
+            found = Object.values(game.teams[side].players).find((p)=>p.id==playerId);
           if(found) break;
         }
-      if(found)
+      if(found?.full_name)
       {
-        player = `${found.first_name} ${found.last_name}`;
+        player = found.full_name;
       }
     }
-    if(typeof(player)=="object")
-      player = `${player.first_name} ${player.last_name}`;
+    if(player?.full_name)
+      player = player.full_name;
     if(player.indexOf(" ")>-1&&plink.indexOf("player=")>-1)
       plink = `/stats?player=${encodeURIComponent(player)}`;
     if(player.indexOf('-')>-1&&player.length===36)
@@ -451,7 +489,7 @@ function showStats(player_stats, lineup, game) {
         {
         out.push('<td class="hasEvents">');
         out.push(`<span class="toggleNext">${s}</span>`);
-        out.push(`<div class="info hide float biggin">${Util.tablify(events)}</div>`);
+        out.push(`<div class="info hide float biggin tablify">${Util.tablify(events)}</div>`);
         out.push('</td>');
         } else out.push(`<td>${s}</td>`);
       } else
@@ -476,7 +514,7 @@ function showStats(player_stats, lineup, game) {
         });
         out.push('<td class="hasEvents">');
         out.push(`<span class="toggleNext">${s}</span>`);
-        out.push(`<div class="info hide float biggin">${Util.tablify(events)}</div>`);
+        out.push(`<div class="info hide float biggin tablify">${Util.tablify(events)}</div>`);
         out.push('</td>');
       } else
         out.push(`<td>${s}</td>`);
@@ -536,16 +574,17 @@ function showStats(player_stats, lineup, game) {
       if(game?.teams)
         for(var side = 0; side<2; side++)
         {
-          found = [...game.teams[side].players].find((p)=>p.id==playerId);
+          if(game.teams[side].players)
+            found = Object.values(game.teams[side].players).find((p)=>p.id==playerId);
           if(found) break;
         }
-      if(found)
+      if(found?.full_name)
       {
-        player = `${found.first_name} ${found.last_name}`;
+        player = found.full_name;
       }
     }
-    if(typeof(player)=="object")
-      player = `${player.first_name} ${player.last_name}`;
+    if(player?.full_name)
+      player = player.full_name;
     if(player.indexOf(" ")>-1&&plink.indexOf("player=")>-1)
       plink = `/stats?player=${encodeURIComponent(player)}`;
     if(player.indexOf('-')>-1&&player.length===36)
@@ -593,111 +632,6 @@ function showStats(player_stats, lineup, game) {
     out.push(`<td>${Object.values(tcstats).join('</td><td>')}</td>`);
   out.push('</tbody></table>')
   return out.join("\n");
-}
-
-function writeScripts(res) {
-  res.write(`</div><style type="text/css">
-    .page{margin:0 20px;}
-    .hidden{opacity:0.5}
-    .summary thead td{font-size:14pt;text-align:center;padding:1px 5px;}
-    .summary tbody td{font-size:20pt;padding:1px 5px;text-align:center;}
-    .summary tbody td.teamname{text-align:left;}
-    .games{max-height:80vh;overflow-y:auto;padding:10px;display:inline-block;border:1px solid black;}
-    .float{position:absolute;margin-left:20px;background-color:white;border:1px solid black;padding:5px;}
-    .hide{display:none}
-    .stats table {margin-top:10px;}
-    .stats tr td:first-of-type { border-left: 1px solid #aaa; }
-    .stats tr td { border-top: 1px solid black; border-right: 1px solid #000; }
-    .stats table { border-bottom: 1px solid black; }
-    .stats thead, .stats tfoot, .stats tbody + tbody { font-weight: bold; }
-    .stats tr td:nth-of-type(even) { background-color: #eee; }
-    .stats .info tr td:nth-of-type(even) { background-color: white; }
-    .book td { padding: 4px; }
-    .book td.block { padding: 0px; }
-    .book tr:nth-of-type(even) { background-color: #eee; }
-    .subs tr:nth-of-type(even), .subs tr, .info tr:nth-of-type(even) { background-color: white; }
-    .subs td {border: 1px solid black;text-align:center;}
-    .breakup{page-break-before:always;margin-top:20px;}
-    .break{page-break-after:always;}
-    .hasEvents > span { color: #000033; cursor: pointer; }
-    a { text-decoration: none; color: #000099; }
-    a:hover { text-decoration: underline; }
-    td.top{border-top:4px solid black}
-    .divify div { display: inline-block; }
-    .item,.key { vertical-align: top; }
-    .biggin{max-width:400px;max-height:300px;overflow:auto;}
-    </style><style type="text/css" media="print">.page{margin:0px}.noprint{display:none}</style>`);
-  res.write(`<script>
-    document.querySelectorAll(".tablify .key,.divify .key").forEach((ktd)=>{
-      var vtd = ktd.nextElementSibling;
-      var sum = vtd.nextElementSibling;
-      ktd.addEventListener('click',()=>{
-        vtd.classList.toggle('hide');
-        sum.classList.toggle('hide');
-      });
-      sum.addEventListener('click',()=>{
-        vtd.classList.remove('hide');
-        sum.classList.add('hide');
-      });
-    });
-    document.querySelectorAll(".stats thead .key").forEach((el)=>el.addEventListener('click',({target})=>{
-      const table = target.closest('table');
-      // check if already sorted and add classes
-      const asc = target.classList.contains('desc');
-      target.classList.toggle('asc', asc)
-      target.classList.toggle('desc', !asc)
-      // get other headers
-      const ths = [...target.parentNode.children];
-      // get index of column
-      const index = ths.indexOf(target); //target.getAttribute("data-index");
-      // remove classes from other headers
-      ths.forEach((th, i) => {
-        if (i === index) return;
-        th.classList.toggle('asc', false);
-        th.classList.toggle('desc', false);
-      })
-      // first remove trs
-      const tbody = table.querySelector("tbody");
-      const rows = [...tbody.childNodes].filter((el)=>el.nodeName=="TR").map((tr)=>[...tr.childNodes].filter((el)=>el.nodeName=="TD").map((td)=>td.innerHTML));
-      // sort trs
-      rows.sort((a,b) => {
-        const left = a[index];
-        const right = b[index]
-        if (Number.isNaN(+left)) {
-          // sort strings
-          return left.localeCompare(right) * (asc ? 1 : -1);
-        }
-        // sort numbers
-        return (left - right) * (asc ? 1 : -1);
-      });
-      // add trs back
-      tbody.innerHTML = rows.map((row)=>'<tr>'+row.map((s)=>'<td>'+s+'</td>').join('')+'</tr>').join('');
-      handle_clicks(tbody);
-    }));
-    handle_clicks(document);
-    function handle_clicks(parent) {
-      parent.querySelectorAll('.tablify .bracket').forEach((el)=>el.addEventListener('click',()=>{
-        var p = el.parentElement;
-        var vtd = p.querySelector("table");
-        var sum = p.querySelector(".sum");
-        if(vtd&&sum)
-        {
-          if(!sum.classList.contains('toggle'))
-          {
-            sum.classList.add('toggle');
-            sum.addEventListener('click',()=>{
-              vtd.classList.toggle('hide');
-              sum.classList.toggle('hide');
-            });
-          }
-          vtd.classList.toggle('hide');
-          sum.classList.toggle('hide');
-        }
-      }));
-      parent.querySelectorAll('.toggleNext').forEach((el)=>el.addEventListener('click',()=>{el.nextElementSibling.classList.toggle('hide');}));
-      parent.querySelectorAll('.togglePrev').forEach((el)=>el.addEventListener('click',()=>{el.previousElementSibling.classList.toggle('hide');})&&el.addEventListener('click',()=>{el.previousSibling.classList.toggle('hide')}));
-    }
-    </script>`);
 }
 
 function getScoreHTML(block) {
@@ -875,16 +809,9 @@ function getScoreHTML(block) {
     if(['K','ꓘ'].indexOf(block.defense)>-1&&block.pitcher)
       marks += `<text xml:space'="preserve" style="font-weight:500;font-size:8px;font-family:Arial;text-align:center;text-anchor:middle;fill:red;stroke:none;" x="60" y="72" transform="translate(-13.749 -30.811)"><tspan style="font-size:8px;fill:red;text-align:center;stroke:none;" x="60" y="72">${block.pitcher}</tspan></text>`;
     else if(block.defense) {
-      let defender = block.defender;
-      if(block.events.length>0&&block.events[block.events.length-1].attributes?.defenders?.length)
-      {
-        const defs = block.events[block.events.length-1].attributes.defenders;
-        if(defs.length>1)
-          defender = defs.map((d,i)=>d.player?d.player.substr(0,d.player.indexOf(" "))+(i<defs.length-1?" + ":""):"").join(" ");
-        else
-          defender = defs[defs.length-1].player || "";
-      }
-      marks += `<text xml:space'="preserve" style="font-weight:500;font-size:7px;font-family:Arial;text-align:center;text-anchor:middle;fill:red;stroke:none;" x="60" y="72" transform="translate(-13.749 -30.811)"><tspan style="font-size:8px;fill:red;text-align:center;stroke:none;" x="60" y="72">${defender}</tspan></text>`;
+      let defender = block.defender || "";
+      if(defender)
+        marks += `<text xml:space'="preserve" style="font-weight:500;font-size:7px;font-family:Arial;text-align:center;text-anchor:middle;fill:red;stroke:none;" x="60" y="72" transform="translate(-13.749 -30.811)"><tspan style="font-size:8px;fill:red;text-align:center;stroke:none;" x="60" y="72">${defender}</tspan></text>`;
     }
   }
   marks = `<svg width="162" height="112" viewBox="0 0 85.713 59.396" xmlns="http://www.w3.org/2000/svg">
@@ -905,4 +832,393 @@ function getScoreHTML(block) {
   return marks;
 }
 
-module.exports = { writeEventHTML, writeScorebook, writeScripts, showTotalStats, showSprayChart, showStats, getScoreHTML };
+function writeMain(res,gc) {
+  res.header("Content-Type", "text/html");
+  res.write(`<html><head><title>`);
+  if(gc.games?.length==1)
+  {
+    const game = gc.games[0];
+    const t1 = game.teams[0];
+    const t2 = game.teams[1];
+    res.write(`${t1.name} (${game.runs[0]}) @ ${t2.name} (${game.runs[1]})`);
+  }
+  else if(gc.games?.length>1)
+    res.write(`GC Games for ${gc.email}`);
+  else if(gc.email) res.write(gc.email);
+  res.write(`</title></head><body><div class="page">`);
+  const suffix = gc.link_suffix || ""; //req.query.user ? `&user=${req.query.user}` : "";
+  if(gc.events)
+  {
+    res.write(`<table border="1">`);
+    if(gc.teams)
+      res.write(`<caption>${gc.teams[0].name} @ ${gc.teams[1].name}</caption>`);
+    gc.events.forEach((e)=>writeEventHTML(e,res,gc));
+    res.write("</table>");
+    writeScorebook(gc, res, gc);
+  }
+  if(gc.schedule?.length)
+  {
+    const needsTeam = gc.teams&&Object.keys(gc.teams).length>1;
+    const future = gc.schedule
+      .filter((s)=>s.event?.status!="cancelled"&&s.event?.start?.datetime&&new Date(s.event.start.datetime)>Date.now())
+      .sort(Util.eventSort)
+      .reverse();
+    if(future.length)
+    {
+      res.write('<section class="games_wrap"><strong class="toggleNext">Upcoming Events</strong><div><div class="scroll">');
+      res.write('<table>');
+      future.forEach((s)=>{
+        let title = s.event.title;
+        if(s.event.sub_type?.indexOf('scrimmages')>-1)
+        {
+          if(title.indexOf("Game ")>-1)
+            title = title.replace("Game ", "Scrimmage ");
+          else title += " (Scrimmage)";
+        }
+        res.write('<tr>');
+        if(needsTeam)
+          res.write(`<td>${gc.teams[s.event.team_id].name}</td>`);
+        res.write(`<td><a href="?event=${s.event.id}">${title}</a></td><td align="right">`);
+        if(s.event?.start?.datetime)
+        {
+          const d = new Date(s.event.start.datetime);
+          const end = new Date(s.event.end.datetime);
+          res.write(Util.toLocaleDateTimeString(d,end));
+          if(s.event.arrive?.datetime)
+          {
+            const early = (new Date(s.event.arrive.datetime) - d) / 60000;
+            res.write(` (${early}m)`);
+          }
+        }
+        res.write(`</td><td>`);
+        res.write(`<span class="toggleNext">Info</span><div class="hide float">${Util.tablify(s)}</div></td></tr>`);
+      });
+      res.write('</table>');
+      res.write('</div></div></section>');
+    }
+  }
+  if(gc.games?.length)
+  {
+    res.write('<section class="games_wrap"><strong class="toggleNext">Games</strong><div>')
+    gc.games.forEach((game,gi)=>{
+      if(!game.teams) return;
+      const t1 = game.teams[0];
+      const t2 = game.teams[1];
+      if(!game.events?.length) {
+        const linkStart = `<a href="?game=${game.event_id}${suffix}">`;
+        if(gi==0)
+          res.write('<div class="games scroll"><table>');
+        res.write('<tr>');
+        let matchType = "vs";
+        if(game.home_away == "home")
+          matchType = "@";
+        res.write(`<td>${linkStart}${game.getMyTeam().name} (${game.owning_team_score})</a></td>`);
+        res.write(`<td>${matchType}<td>`);
+        res.write(`<td>${linkStart}${game.getOtherTeam().name} (${game.opponent_team_score})</a></td>`);
+        res.write(`<td>${linkStart}`);
+        if(game.event?.event?.start?.datetime)
+          res.write(Util.toLocaleDateTimeString(game.event.event.start.datetime, game.event.event.end.datetime));
+        else if(game.event?.start?.datetime)
+          res.write(Util.toLocaleDateTimeString(game.event.start.datetime, game.event.end.datetime));
+        else
+          res.write(game.last_scoring_update);
+        res.write(`</a></td>`);
+        res.write('</tr>');
+        if(gi==gc.games.length-1) res.write('</table></div>');
+        return;
+      }
+      if(gc.events) return;
+      res.write(`<div class="toggleNext"><h1><a href="/stats?team=${t1.id}">${t1.name}</a> (${game.runs[0]}) @ <a href="/stats?team=${t2.id}">${t2.name}</a> (${game.runs[1]}) on `);
+      if(game.event.event.start.datetime)
+        res.write(Util.toLocaleDateTimeString(game.event.event.start.datetime));
+      else
+        res.write(Util.toLocaleDateTimeString(game.events[0].createdAt));
+      res.write(`</h1></div>`);
+      res.write(`<table border="1" class="hide">`);
+      game.events.forEach((e)=>writeEventHTML(e,res,gc));
+      res.write("</table>");
+      writeScorebook(game, res, gc);
+    });
+    res.write('</div></section>');
+  }
+
+  if(gc.teams && Object.keys(gc.teams).length > 1)
+    {
+      res.write('<section class="teams"><strong class="toggleNext">My Teams</strong><div class="teams"><table><thead><tr><td>Team</td><td>Upcoming</td><td>Games Played</td><td>Season</td><td>Info</td></tr></thead><tbody>');
+      const teams = [...Object.values(gc.teams)];
+      // if(gc.organizations)
+      //   teams.unshift({name:"Organizations",data:gc.organizations});
+      teams.forEach((team)=>{
+        let team_id = team.id || team.root_team_id;
+        if(team.proxy_team_id)
+          team_id = `${team_id}&proxy=${team.proxy_team_id}`;
+        res.write(`<tr><td><a href="?team=${team_id}">${team.name}</a></td>`);
+        let events = [];
+        if(team.schedule&&Array.isArray(team.schedule))
+          events = team.schedule.filter((s)=>s.event?.start?.datetime&&s.event.status=="scheduled"&&Date.parse(s.event.start.datetime)>Date.now());
+        res.write(`<td>${events.length}</td>`);
+        res.write(`<td>${team.games?.length||0}</td>`);
+        res.write(`<td>${team.season_name} ${team.season_year}</td><td>`);
+        res.write(`<a href="?team=${team_id}&format=json">Click for more info</a>`);
+        // res.write(`<div class="info hide float biggin">${Util.tablify(team)}</div>`);
+        res.write("</td></tr>");
+      });
+      res.write('</tbody></table></div></section>');
+    }
+  if(gc.organizations && Object.keys(gc.organizations).length)
+    {
+      res.write(`<section class="organizations"><strong class="toggleNext">My Organizations</strong><table>`);
+      const orgs = [...Object.values(gc.organizations)];
+      orgs.forEach((org)=>{
+        res.write(`<tr><td><a href="?org=${org.id}">${org.name}</a></td>`);
+        res.write(`<td>${org.season_name} ${org.season_year}</td>`);
+        res.write(`<td>${org.teams?.length??0} teams</td>`);
+        res.write('<td><span class="toggleNext">Info</span>');
+        res.write(`<div class="info hide float biggin">${Util.tablify(org)}</div>`);
+        res.write('</td></tr>');
+      });
+      res.write(`</table></section>`);
+    }
+  
+  if(!gc.games?.length&&!gc.organizations&&!gc.events)
+  {
+    if(gc.event?.id&&gc.event.event_type=="game")
+    {
+      let title = "Game";
+      if(gc.event.sub_type.indexOf("scrimmages")>-1)
+        title = "Scrimmage";
+      if(gc.pregame_data.opponent_name)
+        title += " vs " + gc.pregame_data.opponent_name;
+      title += " on " + Util.toLocaleDateTimeString(gc.event.start.datetime);
+      res.write(`<h1>${title}</h1>`)
+      let lineup = gc.config?.lineup;
+      let oppoline = gc.config?.oppoline || undefined;
+      if(typeof(oppoline)=="string"&&oppoline.indexOf("\n")>-1)
+        oppoline = oppoline.replaceAll("\r","").split("\n").map((row)=>row.split("\t"));
+      if(Array.isArray(oppoline)&&oppoline.length<7) oppoline = false;
+      const tpos = gc.pregame_data?.home_away=="home"?0:1;
+      if(typeof(lineup)!="object"||gc.game?.inning_positions?.length>1)
+      {
+        lineup = [];
+        let inning_positions = [];
+        if(gc.game?.inning_positions)
+          inning_positions = gc.game?.inning_positions.map((ip)=>ip[tpos]);
+        // console.log('Inning positions', inning_positions);
+        if(gc.lineup?.length)
+          lineup = gc.lineup.map((p)=>{
+            let pos = p.position || "X";
+            const row = [p.player.name];
+            for(var inning=0;inning<6;inning++)
+            {
+              if(inning_positions[inning]&&typeof(inning_positions[inning][p.player_id])!="undefined")
+                pos = inning_positions[inning][p.player_id] || "X";
+              row.push(pos);
+            }
+            return row;
+          });
+        else if(gc.players?.length)
+          lineup = gc.players.filter((p)=>p.status=="active").map((p)=>[p.name,'X','X','X','X','X','X']);
+        else if(gc.team?.players?.length)
+          lineup = gc.team.players.filter((p)=>p.status=="active").map((p)=>[p.name,'X','X','X','X','X','X']);
+      }
+      if(typeof(oppoline)!="object"&&gc.opponent?.players?.length)
+      {
+        oppoline = gc.opponent.players.map((p)=>[p.long_name,'X','X','X','X','X','X']);
+      }
+      if(gc.pregame_data.opponent_id)
+        gc.game.teams.forEach((t)=>{
+          if(t.id==gc.pregame_data.opponent_id)
+            oppoline = t.players.map((p)=>[p.number,p.first_name,p.last_name]);
+        });
+      if(gc.game?.lineup?.length>1) // after start
+      {
+        const oteam = gc.game.getOtherTeam();
+        const oplayers = oteam?.players;
+        let inning_positions = [];
+        if(gc.game?.inning_positions)
+          inning_positions = gc.game.inning_positions.map((ip)=>ip[1-tpos]);
+        if(oplayers.length>5&&gc.game.lineup[1-tpos].length>5)
+        oppoline = gc.game.lineup[1-tpos].map((playerid)=>{
+          const player = oplayers?.find((p)=>p.id==playerid);
+          let name = playerid;
+          if(player?.name)
+            name = player.name;
+          else if(player?.last_name)
+            name = player.last_name;
+          const row = [name];
+          let pos = "X";
+          for(var inning=0;inning<6;inning++)
+          {
+            if(inning_positions[inning]&&typeof(inning_positions[inning][playerid])!="undefined")
+              pos = inning_positions[inning][playerid] || "X";
+            row.push(pos);
+          }
+          return row;
+        });
+      }
+      if(gc.stream?.game_status!="completed")
+      {
+        if(gc.game.events?.length)
+        {
+          let counts = "";
+          if(gc.game.counts)
+            counts = `, ${gc.game.counts.outs} outs, ${gc.game.counts.balls}-${gc.game.counts.strikes}`;
+          res.write(`<div class="info">Inning: ${gc.ballSide?"Bottom":"Top"} of ${gc.game?.inning}${counts}</div>`);
+        }
+        const rsvp = gc.rsvp?.names;
+        res.write(`<form method="POST" action="config/${gc.event.id}"><fieldset><legend class="toggleNext">Lineup Manager</legend>
+          <div>
+          <div class="lineups"><div class="lineup">
+          <strong class="toggleNext">${gc.team.name}</strong>
+          <div class="">
+          <div class="rsvp" style="float:left">${rsvp?lineup.map((row)=>rsvp[row[0]]&&rsvp[row[0]][0].toUpperCase().replace("U","?")||"?").join("<br>"):""}</div>
+          <textarea name="config[lineup]" class="lineup" rows="12" cols="50">${lineup.map((row)=>row.join("\t")).join("\n")}</textarea>
+          <div style="clear:both"></div>
+          </div>
+          </div><div class="lineup">
+          <strong class="toggleNext">${gc.opponent.name}</strong>
+          <div class="">
+          <textarea name="config[oppoline]" class="lineup" rows="12" cols="60">${oppoline.map((row)=>row.join("\t")).join("\n")}</textarea>
+          </div>
+          </div></div>
+          <br>
+          <input type="submit" name="command" value="Update" />
+          <input type="submit" name="command" value="Send" />
+          </div></fieldset>
+          </form><br>`);
+      }
+      else {
+        res.write(`<table cellpadding="4"><tr><td>${gc.team.name}</td><td>${gc.opponent?.name||"Opponent"}</td></tr><tr><td valign="top">`);
+        res.write(`<table border="1"><thead><tr><td>Order</td><td>#</td><td>Player</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td></tr></thead><tbody>`);
+        lineup.forEach((row,ord)=>{
+          const name = row[0];
+          const player = gc.team.players.find((p)=>p.name==name);
+          res.write(`<tr><td>${ord+1}</td><td>${player.number}</td>`);
+          res.write(row.map((cell)=>"<td>"+cell+"</td>").join(""));
+          res.write("</tr>");
+          });
+        res.write(`</tbody></table>`);
+        res.write('</td><td valign="top">');
+        res.write(`<table border="1"><thead><tr><td>Order</td><td>Player</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td></tr></thead><tbody>`);
+        res.write(`${oppoline.map((row,ord)=>`<tr><td>${ord+1}</td>`+row.map((cell)=>"<td>"+cell+"</td>").join("")+"</tr>").join("")}</tbody></table>`);
+        res.write('</td></tr></table>');
+      }
+    }
+    if(gc.game.video_stream?.publish_url)
+      res.write(`<table><tr><td>Video Publish URL:</td><td><input type="text" size="50" value="${gc.game.video_stream.publish_url}" /></td></tr></table>`);
+
+    res.write(`<strong class="toggleNext">Advanced</strong><div class="hide">`);
+    res.write(Util.tablify(gc));
+    res.write('</div>');
+  }
+  writeScripts(res);
+  res.write(`<div class="noprint"><a href="/">Back to Teams</a></div>`);
+  res.write(`<a href="/logout" class="noprint">Log Out</a>`);
+  res.write(`</div></body></html>`);
+  res.end();
+}
+
+
+function writeScripts(res) {
+  res.write(`</div><style type="text/css">
+    .page{margin:0 20px;}
+    section{margin-bottom:20px}
+    .hidden{opacity:0.5}
+    .summary thead td{font-size:14pt;text-align:center;padding:1px 5px;}
+    .summary tbody td{font-size:20pt;padding:1px 5px;text-align:center;}
+    .summary tbody td.teamname{text-align:left;}
+    .scroll{max-height:80vh;overflow-y:auto;padding:10px;display:inline-block;border:1px solid black;}
+    .float{position:absolute;margin-left:20px;background-color:white;border:1px solid black;padding:5px;}
+    .lineups{display:grid;}
+    @media(min-width:1100px) {
+    .lineups{grid-template-columns:1fr 1fr;}
+    }
+    .hide{display:none}
+    .stats table {margin-top:10px;}
+    .stats tr td:first-of-type { border-left: 1px solid #aaa; }
+    .stats tr td { border-top: 1px solid black; border-right: 1px solid #000; }
+    .stats table { border-bottom: 1px solid black; }
+    .stats thead, .stats tfoot, .stats tbody + tbody { font-weight: bold; }
+    .stats tr td:nth-of-type(even) { background-color: #eee; }
+    .stats .info tr td:nth-of-type(even) { background-color: white; }
+    .book td { padding: 4px; }
+    .book td.block { padding: 0px; }
+    .book tr:nth-of-type(even) { background-color: #eee; }
+    .subs tr:nth-of-type(even), .subs tr, .info tr:nth-of-type(even) { background-color: white; }
+    .subs td {border: 1px solid black;text-align:center;}
+    .rsvp { padding-top: 3px; padding-right: 6px; }
+    .rsvp, textarea.lineup { font-family: monospace; font-size: 16px; line-height: 1.2; text-align: center; }
+    textarea.lineup { text-align: left; }
+    .breakup{page-break-before:always;margin-top:20px;}
+    .break{page-break-after:always;}
+    .hasEvents > span { color: #000033; cursor: pointer; }
+    a { text-decoration: none; color: #000099; }
+    a:hover { text-decoration: underline; }
+    td.top{border-top:4px solid black}
+    .divify div { display: inline-block; }
+    .item,.key { vertical-align: top; }
+    .biggin{max-width:400px;max-height:300px;overflow:auto;}
+    .sum { font-size: 80%; color: #333; }
+    .closed > table { display: none; }
+    .closed > .sum { display: inline-block; }
+    </style><style type="text/css" media="print">.page{margin:0px}.noprint{display:none}</style>`);
+  res.write(`<script>
+    document.querySelectorAll(".stats thead .key").forEach((el)=>el.addEventListener('click',({target})=>{
+      const table = target.closest('table');
+      // check if already sorted and add classes
+      const asc = target.classList.contains('desc');
+      target.classList.toggle('asc', asc)
+      target.classList.toggle('desc', !asc)
+      // get other headers
+      const ths = [...target.parentNode.children];
+      // get index of column
+      const index = ths.indexOf(target); //target.getAttribute("data-index");
+      // remove classes from other headers
+      ths.forEach((th, i) => {
+        if (i === index) return;
+        th.classList.toggle('asc', false);
+        th.classList.toggle('desc', false);
+      })
+      // first remove trs
+      const tbody = table.querySelector("tbody");
+      const rows = [...tbody.childNodes].filter((el)=>el.nodeName=="TR").map((tr)=>[...tr.childNodes].filter((el)=>el.nodeName=="TD").map((td)=>td.innerHTML));
+      // sort trs
+      rows.sort((a,b) => {
+        const left = a[index];
+        const right = b[index]
+        if (Number.isNaN(+left)) {
+          // sort strings
+          return left.localeCompare(right) * (asc ? 1 : -1);
+        }
+        // sort numbers
+        return (left - right) * (asc ? 1 : -1);
+      });
+      // add trs back
+      tbody.innerHTML = rows.map((row)=>'<tr>'+row.map((s)=>'<td>'+s+'</td>').join('')+'</tr>').join('');
+      handle_clicks(tbody);
+    }));
+    handle_clicks(document);
+    function handle_clicks(parent) {
+      parent.querySelectorAll(".tablify .key,.divify .key").forEach((ktd)=>{
+        var vtd = ktd.nextElementSibling;
+        var sum = vtd.nextElementSibling;
+        ktd.addEventListener('click',()=>{
+          vtd.classList.toggle('hide');
+          sum.classList.toggle('hide');
+        });
+        sum.addEventListener('click',()=>{
+          vtd.classList.remove('hide');
+          sum.classList.add('hide');
+        });
+      });
+      parent.querySelectorAll('.tablify .bracket,.tablify .sum').forEach((el)=>el.addEventListener('click',()=>{
+        var p = el.parentElement;
+        p.classList.toggle("closed");
+      }));
+      parent.querySelectorAll('.toggleNext').forEach((el)=>el.addEventListener('click',()=>{el.nextElementSibling.classList.toggle('hide');}));
+      parent.querySelectorAll('.togglePrev').forEach((el)=>el.addEventListener('click',()=>{el.previousElementSibling.classList.toggle('hide');})&&el.addEventListener('click',()=>{el.previousSibling.classList.toggle('hide')}));
+    }
+    </script>`);
+}
+
+module.exports = { writeEventHTML, writeScorebook, writeScripts, writeMain, showTotalStats, showSprayChart, showStats, getScoreHTML };

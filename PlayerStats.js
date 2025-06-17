@@ -258,7 +258,7 @@ class PlayerStats {
   }
   cleanEvent(event) {
     const r = {};
-    ['gameId','teamId','opponentId','offense','defense','createdAt','batterId','player','pitcher','defender','position','inning','out','outs'].forEach((k)=>{if(typeof(event[k])!="undefined")r[k]=event[k];});
+    ['gameId','sequence_number','teamId','opponentId','offense','defense','createdAt','batterId','player','pitcher','defender','position','inning','out','outs'].forEach((k)=>{if(typeof(event[k])!="undefined")r[k]=event[k];});
     if(event.attributes)
     {
       if(event.attributes.defenders?.length)
@@ -326,7 +326,7 @@ class PlayerStats {
     if(!ip&&inning==this.pitchStart.inning&&outs==this.pitchStart.outs) {
       outs += this.batters_faced.length;
     }
-    console.log(`Relieving pitcher (${this.name}) in ${inning} with ${outs} outs: ${ip} IP.`, this.pitchStart);
+    // console.log(`Relieving pitcher (${this.name}) in ${inning} with ${outs} outs: ${ip} IP.`, this.pitchStart);
     while(outs > 2) {
       ip++;
       outs -= 3;
@@ -387,7 +387,7 @@ class PlayerStats {
         if(event.attributes.playType&&(event.attributes.playType.indexOf("line")>-1||event.attributes.playType.indexOf("fly")>-1))
           short.airout = ++this.fieldingStats.ao;
         else if(dlen==1)
-          short.unassisted = ++this.fieldingStats.upo;
+          short.upo = ++this.fieldingStats.upo;
       } else if(defender.assist)
         short.assist = ++this.fieldingStats.a;
       else if(defender.error)

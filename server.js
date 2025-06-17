@@ -14,7 +14,10 @@ const bb_session = session(
   {secret:"baseball",name:"baseball",saveUninitialized:false,resave:true,cookie:{secure:false,httpOnly:true,maxAge:24*60*60*1000
   ,store:new RedisStore({prefix:"Yermom",client:new Db("Redis").createClient(true)})
   }});
+const memwatch = require('@airbnb/node-memwatch');
 const { showTotalStats, writeScripts } = require('./html_generator');
+const { Team, Game } = require('./baseball');
+const Util = require('./util');
 
 
 app.use(cookieParser());
@@ -26,9 +29,12 @@ app.use(express.urlencoded({extended:true}));
  * @param {Request} req 
  * @param {Response} res 
  */
-function showLogin(req,res) {
+function showLogin(req,res,showCode) {
   if(res.headersSent) return;
   if(req.headers.accept?.indexOf("html")==-1) res.status(302).header("Location: /login").send({error:"No Login"});
+  let email = "";
+  if(req.cookies.gc_email)
+    email = req.cookies.gc_email;
   if(!res.headersSent)
     res.send(`
   <!doctype html>
@@ -46,13 +52,14 @@ function showLogin(req,res) {
     <form method="POST" action="/login">
     <table cellspacing="2" style="display:inline-block"><tr>
       <td><label for="user">Email:</label></td>
-      <td><input type="email" id="user" name="user" value="${req.cookies.gc_email||""}" /></td>
+      <td><input type="email" id="user" name="user" value="${email}" /></td>
       </tr><tr>
       <td><label for="pass">Password:</label></td>
       <td><input type="password" id="pass" name="pass" /></td>
+      `+(!!showCode?`
       </tr><tr>
       <td><label for="code">Code (if sent):</label></td>
-      <td><input type="text" id="code" name="code" /></td>
+      <td><input type="text" id="code" name="code" /></td>`:'')+`
       </tr></table><br />
     <input type="submit" value="Login" />
     </form>
@@ -65,10 +72,14 @@ app.get('/allkeys', async(req,res)=>{
     .then((keys)=>res.send(keys))
     .catch((e)=>res.status(404).json({error:e}));
 });
-app.get('/hkeys/:key', async(req,res)=>{
+app.get('/hkeys/:key/:pat?', async(req,res)=>{
   const cache = new Cache(req,res);
   await cache.hkeys(req.params.key)
-    .then((keys)=>res.send({key:req.params.key,cache:keys}))
+    .then((keys)=>{
+      if(req.params.pat)
+        keys=[...keys].filter((k)=>`${k}`.match(req.params.pat));
+      res.send({key:req.params.key,cache:keys});
+    })
     .catch((e)=>res.status(404).json({error:e}));
 });
 app.get('/hgetall/:key', async(req,res)=>{
@@ -87,8 +98,192 @@ app.post('/hset/:key/:field', async(req,res)=>{
   const cache = new Cache(req,res);
   // console.log(`hset:${req.params.key}:${req.params.field}`, req.body);
   await cache.hset(req.params.key, req.params.field, req.body)
-    .then((nums)=>res.sendStatus(200).send({success:nums,body:req.body}))
-    .catch((e)=>!res.headersSent&&res.sendStatus(400).json({error:e}));
+    .then((nums)=>res.send({success:nums,body:req.body}))
+    .catch((e)=>!res.headersSent&&res.status(400).json({error:e}));
+});
+app.post('/config/:gameid', bb_session, async(req,res)=>{
+  const cache = new Cache(req,res);
+  const gc = new GameChanger(req.cookies.gc_email, null, cache);
+  const game_id = req.params.gameid;
+  const event = await gc.getApi(`events/${game_id}`,true);
+  if(!event.event.team_id)
+    console.warn('Bad event?', event);
+  const team_id = event.event.team_id;
+  const team = new Team(await gc.getApi(`teams/${team_id}`));
+  const summary = await gc.getApi(`teams/${team_id}/game-summaries/${game_id}`);
+  const players = await gc.teamPlayersApi(team_id);
+  const game = new Game(summary, gc.findData, team);
+  if(!team_id)
+    console.warn('Bad team?', game);
+  if(!req.body?.config) {
+    if(req.headers.referer)
+      return res.redirect(req.headers.referer);
+    else res.redirect("/");
+  }
+  const config = req.body.config;
+  if(config.lineup&&!config.lineupdates)
+  {
+    config.lineupdates = [];
+    if(typeof(config.lineup)=="string")
+    {
+      config.lineup = config.lineup.replaceAll("\r\n", "\n").split("\n").map((row)=>row.split("\t"));
+    }
+    if(typeof(config.oppoline)=="string")
+    {
+      config.oppoline = config.oppoline.replaceAll("\r\n", "\n").split("\n").map((row)=>row.split("\t"));
+    }
+    for(var row of config.lineup)
+    {
+      const name = row[0];
+      const player = players.find((p)=>p.first_name==name||`${p.first_name} ${p.last_name}`==name);
+      if(!player?.id)
+      {
+        console.warn(`Unable to find player for lineup conversion: ${name}`);
+        continue;
+      }
+      for(var inning=1;inning<row.length;inning++)
+      {
+        const pos = row[inning];
+        if(game.positionCodes.indexOf(pos)==-1)
+          continue;
+        if(!config.lineupdates[inning-1])
+          config.lineupdates[inning-1] = {};
+        config.lineupdates[inning-1][pos] = player.id;
+      }
+    }
+  }
+  if(req.body.command=="Send")
+  {
+    const entries = config.lineup.map((row)=>{
+      const name = row[0];
+      const player = players.find((p)=>p.name==name||p.full_name==name||p.long_name==name||p.first_name==name);
+      if(!player?.id) {
+        console.warn(`Unable to find player for ${name}`);
+        return false;
+      }
+      let pos = row[1];
+      if(!["P","C","1B","2B","3B","SS","LF","CF","RF"].indexOf(pos))
+        pos = null;
+      return {player_id: player.id, fielding_position: pos};
+    }).filter((e)=>e);
+    const lineup = { dh: null, dh_batting_for: null, entries };
+    let lineup_id = false;
+    if(req.body.lineup_id) lineup_id = req.body.lineup_id;
+    if(event?.pregame_data?.lineup_id) lineup_id = event.pregame_data.lineup_id;
+    if(!lineup_id)
+    {
+      lineup.team_id = team_id;
+      lineup.id = Util.uuid();
+      await gc.fetchApi({lineup}, 'bats-starting-lineups/');
+    } else {
+      await gc.fetchApi({updates:lineup}, `bats-starting-lineups/${lineup_id}`, {method:"PATCH"});
+    }
+      
+  }
+  await cache.hset('gamechanger_config', req.params.gameid, config)
+    .then((result)=>{
+      if(req.headers.referer)
+        return res.redirect(req.headers.referer);
+      res.send({result,config})
+    }).catch();
+  if(!res.headersSent)
+    res.send({success:0,message:"Not sure what happened"});
+});
+app.get('/check', bb_session, async(req,res)=>{
+  const cache = new Cache(req,res);
+  let checks = 0;
+  if(req.cookies.gc_email)
+  {
+    const gc = new GameChanger(req.cookies.gc_email,false,cache);
+    await gc.checkForUpdates();
+    checks++;
+  } else {
+    await cache.hkeys('gamechanger_tokens')
+      .then(async(keys)=>{
+        for(const key of keys)
+        {
+          const token = await cache.hget('gamechanger_tokens', key);
+          const gc = new GameChanger(token,false,cache);
+          gc.email = key;
+          const updates = await gc.checkForUpdates();
+          console.log(`Updates for ${key}`, updates);
+          checks++;
+        }
+      });
+  }
+  res.send({checks});
+});
+app.get('/refresh_all', bb_session, async(req,res)=>{
+  const cache = new Cache(req,res);
+  await cache.hkeys('gamechanger_tokens')
+    .then(async(keys)=>{
+      let attempts = 0;
+      const fails = {};
+      const tokens = {};
+      for(const key of keys)
+      {
+        attempts++;
+        const token = JSON.parse(await cache.hget('gamechanger_tokens',key));
+        const gc = new GameChanger(token,false,cache);
+        await gc.refreshToken(true).then((token)=>{
+          if(typeof(token)=="object")
+          {
+            tokens[key] = token;
+          } else fails[key] = token;
+        })
+        .catch((e)=>{
+          fails[key] = e;
+        });
+      }
+      const refCount = Object.keys(tokens).length;
+      if(!refCount) {
+        return res.send({success:1,refreshes:0,attempts,fails});
+      }
+      await cache.hsetall('gamechanger_tokens', tokens).catch();
+      Object.keys(fails).forEach(async(key)=>{
+        await cache.hdel('gamechanger_tokens', key);
+      });
+      console.log(`Refreshed ${refCount} tokens`);
+      res.send({success:1,refreshes:refCount,attempts,fails});
+    })
+    .catch((e)=>{
+      console.error(e);
+      res.send({success:0,error:JSON.stringify(e)});
+    });
+});
+app.get('/video/:video_id', bb_session, async(req,res)=>{
+  const cache = new Cache(req,res);
+  let vcache = await cache.hget('gamechanger', 'video_'+req.params.video_id);
+  if(typeof(vcache)=="string")
+    vcache = JSON.parse(vcache);
+  if(vcache&&typeof(vcache)=="object"&&vcache?.url)
+  {
+    let url = vcache.url.replace('master.m3u8','480p30/playlist.m3u8');
+    const opts = {credentials:"include",headers:{}};
+    let suffix = "";
+    let prefix = url.substr(0,url.lastIndexOf('/'));
+    if(vcache.cookies)
+      suffix = "?" + Object.keys(vcache.cookies).map((key)=>`${key.replace('CloudFront-','')}=${encodeURIComponent(vcache.cookies[key])}`).join('&');
+    url += suffix;
+    for(var hkey in Object.keys(req.headers))
+      if(hkey.toLowerCase()!="cookie")
+        opts.headers[hkey] = req.headers[hkey];
+    console.log(`Request-Headers for ${url}`, JSON.stringify(opts.headers));
+    await fetch(url, opts)
+      .then((r)=>{
+        if(r.headers)
+          r.headers.forEach((val,key)=>{
+            if(key.toLowerCase().indexOf("length")==-1)
+              res.header(key, val);
+          });
+        return r.text();
+      })
+      .then((blob)=>{
+        res.send(blob.split("\n").map((s)=>s.startsWith("#")?s:`${prefix}/${s}${suffix}`).join("\n")+"\n");
+      });
+  }
+  if(!res.headersSent)
+    res.status(400).send({error:"Invalid URL probably",vcache,video_id:req.params.video_id});
 });
 app.get('/stats', bb_session, async(req,res)=>{
   const cache = new Cache(req,res);
@@ -149,6 +344,10 @@ app.get('/stats', bb_session, async(req,res)=>{
   if(req.query?.team)
   {
     const teamId = req.query.team;
+    if(req.query.recrunch)
+    {
+
+    }
     await cache.hget(`tstats_${req.cookies.gc_email}`, teamId)
       .then(async (data)=>{
         if(typeof(data)=="string") data = JSON.parse(data);
@@ -224,6 +423,16 @@ app.get('/stats', bb_session, async(req,res)=>{
           totalStats.accumulate(allStats[gameId]);
           allStats[gameId].game = game;
         }
+        const batterIds = {};
+        totalStats.battingEvents.forEach((be)=>{
+          if(!batterIds[be.batterId])
+          {
+            batterIds[be.batterId] = {};
+          }});
+        for(var playerId in batterIds)
+        {
+          batterIds[playerId].clips = await gc.getApi(`video-clips/player/${playerId}/clips`, false, {"Content-Type": "application/vnd.gc.com.none+json; version=0.0.0", "Accept": "application/vnd.gc.com.video_clip_asset_metadata:list+json; version=0.3.0", "x-pagination": "true"});
+        }
         if(req.query.year)
         {
           const yearStats = {};
@@ -241,7 +450,9 @@ app.get('/stats', bb_session, async(req,res)=>{
           allStats = yearStats;
         }
         if(req.query?.format=='json')
-          return res.send({totalStats:totalStats.toJson(),allStats});
+          return res.send({totalStats:totalStats.toJson(),allStats,batterIds,requests:gc.requests});
+        if(req.query.short)
+          gc.shortmode = true;
         res.header('Content-Type', 'text/html');
         res.write(`Total Stats: ${Object.keys(allStats).length}`);
         const nas = {};
@@ -264,21 +475,26 @@ app.get('/stats', bb_session, async(req,res)=>{
 });
 app.get('/', bb_session, async(req,res)=>{
   const cache = new Cache(req,res);
-  if(req.cookies?.gc_email)
+  let gc_email = req.cookies?.gc_email;
+  if(!gc_email && req.query?.gc_email)
+    gc_email = req.query.gc_email;
+  if(gc_email)
   {
-    const gc = new GameChanger(req.cookies.gc_email, null, cache);
+    const gc = new GameChanger(gc_email, null, cache);
     const token = await gc.getToken();
     if(token?.access)
     {
       const me = await gc.getApi("me/user", true);
       if(me.id)
       {
-        console.log(`Logged in with ${req.cookies.gc_email}`, me);
+        console.log(`Logged in with ${gc_email}`, me);
         await gc.handleReq(req,res);
+        // console.log("Heap Diff", hd.end());
       } else console.warn("Invalid user", me);
       // else res.clearCookie("gc_token");
     } else {
       console.warn("Invalid token", token);
+      showLogin(req,res,token!=null&&token!==false);
     }
   }
   showLogin(req,res);
@@ -330,12 +546,13 @@ app.post('/send', bb_session, async(req,res)=>{
       // else res.clearCookie("gc_token");
     } else {
       console.warn("Invalid token", token);
+      showLogin(req,res,true);
     }
   }
   showLogin(req,res);
 });
 app.get('/login', bb_session, async(req,res)=>{
-  showLogin(req,res);
+  showLogin(req,res,!!req.query.show_code);
 });
 app.post('/login', bb_session, async(req,res)=>{
   const cache = new Cache(req, res);
@@ -353,10 +570,11 @@ app.post('/login', bb_session, async(req,res)=>{
 });
 app.get('/logout', bb_session, async(req,res)=>{
   const cache = new Cache(req, res);
-  await cache.hdel("gamechanger", req.cookies.gc_email + "_access_token");
+  if(req.cookies.gc_email)
+    await cache.hdel("gamechanger_tokens", req.cookies.gc_email);
   if(!!req.session)
     req.session.destroy();
-  res.redirect("/");
+  res.redirect("/login");
 });
 app.get('/get/:key', bb_session, async(req,res)=>{
   const cache = new Cache(req, res);

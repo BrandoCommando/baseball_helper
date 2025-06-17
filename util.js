@@ -1,7 +1,47 @@
 const CryptoJS = require("crypto-js");
+const { format: formatDate } = require("date-and-time");
 
 class Util {}
 
+Util.toLocaleDateTimeString = (d, end) => {
+  const parts = [];
+  if(typeof(d)!="object")
+    d = new Date(d);
+  parts.push(formatDate(d,'ddd MMM D'));
+  if(d.getFullYear()!=new Date().getFullYear())
+    parts.push(`, ${d.getFullYear()}`);
+  parts.push(formatDate(d,', h'));
+  if(d.getMinutes()!=0||!end)
+    parts.push(formatDate(d,':mm'));
+  if(!!end)
+  {
+    if(typeof(end)!="object") 
+      end = new Date(end);
+    if(end!=d)
+    {
+      parts.push(formatDate(end,' - h'));
+      if(end.getMinutes()!=0)
+        parts.push(formatDate(end,':mm'));
+    }
+  }
+  parts.push(formatDate(d,' A'));
+  return parts.join('');
+}
+Util.eventSort = (a,b)=>{
+  if(typeof(a)!="object"||typeof(b)!="object") return 0;
+  let ae = a.event;
+  let be = b.event;
+  if(ae.event) ae = ae.event;
+  if(be.event) be = be.event;
+  if(ae.start?.datetime&&be.start?.datetime)
+  {
+    const da = Date.parse(ae.start.datetime);
+    const db = Date.parse(be.start.datetime);
+    if(da<db) return 1;
+    if(da>db) return -1;
+  }
+  return 0;
+};
 Util.uuid = () => [4, 2, 2, 2, 6].map((group)=>CryptoJS.lib.WordArray.random(group).toString(CryptoJS.enc.Hex)).join('-');
 Util.prettify = (o, prefix) => {
   if(typeof(o)=="string"&&["[","{"].indexOf(o[0])>-1)
@@ -62,7 +102,7 @@ Util.tablify = (o,level) => {
     for(var i = 0; i<o.length; i++)
       ret.push(`<tr><td class="item">${Util.tablify(o[i],level+1)}${i<o.length-1?",":""}</td></tr>`)
     ret.push('</table>');
-    ret.push(`<span class="sum hide">...</span>`);
+    ret.push(`<span class="sum hide">...${o.length} items...</span>`);
     ret.push(`<span class="bracket">]</span>`);
   } else {
     ret.unshift(`<span class="bracket">{</span>`);
@@ -72,13 +112,25 @@ Util.tablify = (o,level) => {
     {
       const k = keys[i];
       const comma = i < keys.length - 1 ? "," : "";
-      if(typeof(o[k])=="object") {
+      if(o[k]&&typeof(o[k])=="object") {
         complex = true;
         // const ccount = Object.values(o[k]).length;
         const cret = Util.tablify(o[k],level+1);
+        let ccount = 0;
+        let label = "";
+        if(Array.isArray(o[k]))
+        {
+          ccount = o[k].length;
+          label = `[...${ccount} items...]`;
+        }
+        else
+        {
+          ccount = Object.values(o[k]).length;
+          label = `{${Object.keys(o[k]).join(",")}}`;
+        }
         ret.push(`<tr><td class="key ${level>2?"closed":"open"}">"${k}":</td>
             <td data-level="${level}" class="value ${level>2?"hide":""}">${cret}${comma}</td>
-            <td class="sum ${level>2?"":" hide"}">${Array.isArray(o[k])?"[...]":"{...}"}${comma}</td>
+            <td class="sum ${level>2?"":" hide"}">${label}${comma}</td>
             </tr>`);
       } else ret.push(`<tr><td>"${k}":</td><td>${JSON.stringify(o[k])}${comma}</td></tr>`);
     }
