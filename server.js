@@ -14,7 +14,6 @@ const bb_session = session(
   {secret:"baseball",name:"baseball",saveUninitialized:false,resave:true,cookie:{secure:false,httpOnly:true,maxAge:24*60*60*1000
   ,store:new RedisStore({prefix:"Yermom",client:new Db("Redis").createClient(true)})
   }});
-const memwatch = require('@airbnb/node-memwatch');
 const { showTotalStats, writeScripts } = require('./html_generator');
 const { Team, Game } = require('./baseball');
 const Util = require('./util');
