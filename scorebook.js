@@ -130,7 +130,7 @@ class scorebooks {
       const plays = book.columns[this.currentColumn[home]].plays;
       const myPlay = plays.find((block)=>block.playerId==playerId);
       const batPlays = plays.filter((block)=>!!block.playType||block?.pitches?.length);
-      if(!!myPlay&&batPlays.length>1)
+      if(!!myPlay&&batPlays.length>8)
       {
         if(!myPlay.bases.length&&!myPlay.outs&&!myPlay.events.length) return myPlay;
         // if(myPlay.pitches.length>0)
