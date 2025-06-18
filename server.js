@@ -493,7 +493,7 @@ app.get('/', bb_session, async(req,res)=>{
       // else res.clearCookie("gc_token");
     } else {
       console.warn("Invalid token", token);
-      showLogin(req,res,token!=null&&token!==false);
+      showLogin(req,res,token!=null);
     }
   }
   showLogin(req,res);
