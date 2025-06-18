@@ -1256,6 +1256,28 @@ class gamechanger {
         return res.send({team,players,games,requests:this.requests});
       }
     }
+    if(req.query?.filter)
+    {
+      const filter = `${req.query.filter}`.toLowerCase();
+      const schedule = this.schedule = await this.getApi(`me/schedule`, true).then((s)=>s?.schedule?s.schedule:s);
+      let filtered = [];
+      if(schedule?.events?.length)
+        filtered = [...schedule.events].filter((e)=>{
+          return JSON.stringify(e).toLowerCase().indexOf(filter)>-1;
+        });
+      if(req.query.kind)
+        filtered = filtered.filter((e)=>e.kind==req.query.kind);
+      if(req.query.incomplete)
+        filtered = filtered.filter((e)=>!e.scoring||e.scoring.state!="completed");
+      for(var i=0;i<filtered.length;i++)
+      {
+        const e = filtered[i];
+        e.video_stream = await this.videoStreamApi(e.team_id, e.id).then((s)=>typeof(s)=="object"?s:{"error":s});
+      }
+      if(req.query.publishable)
+        filtered = filtered.filter((e)=>e.video_stream?.publish_url);
+      return res.send({filtered,filter});
+    }
     if(req.query?.event)
     {
       const event_id = req.query.event;
