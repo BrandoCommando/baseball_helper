@@ -1294,6 +1294,7 @@ class gamechanger {
         });
         if(event.team_id)
         {
+          edata.summary = await this.getApi(`teams/${event.team_id}/game-summaries/${event_id}`,true).then((s)=>typeof(s)=="object"?s:{error:s});
           edata.team = await this.getApi(`teams/${event.team_id}`);
           edata.team.players = await this.teamPlayersApi(event.team_id);
           if(edata.name_template = this.createNameTemplate(edata.team.players))
