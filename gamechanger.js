@@ -877,7 +877,7 @@ class gamechanger {
     });
   }
   createNameTemplate(players) {
-    if(!players.length) return false;
+    if(!players?.length) return false;
     const ret = {};
     for(var template of ["{first_name}","{last_name}","{first_name} {last_name}","#{number}"])
     {
