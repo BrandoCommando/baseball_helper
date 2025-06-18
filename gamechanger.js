@@ -1117,7 +1117,7 @@ class gamechanger {
             {
               oppo.id = game.event.pregame_data.opponent_id;
               oppo.name = game.event.pregame_data.opponent_name;
-            } else console.warn("no oppo?", game.event);
+            } //else console.warn("no oppo?", game.event);
             if(game.event_stream?.opponent_id)
               oppo.id = game.event_stream.opponent_id;
             if(oppo.id)

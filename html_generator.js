@@ -180,7 +180,7 @@ function writeScorebook(game, res, gc) {
         res.write(`</td>`);
         book.columns.forEach((col,colin)=>{
           if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
-          let block = col.plays.find((b)=>b.playerId==playerId&&!b.used&&(b?.playType||b?.pitches?.length||b?.offense=="PR"));
+          let block = col.plays.find((b)=>b.playerId==playerId&&!b.used&&(b?.playType||b?.pitches?.length||b?.offense=="PR"||b?.offense=="BB"));
           if(!block&&colin==0)
             block = col.plays.find((b)=>b.row==benchPos&&!b.used);
           if(block)
@@ -210,7 +210,7 @@ function writeScorebook(game, res, gc) {
             res.write(`<td class="top block">`);
           else
             res.write(`<td class="block">`);
-          if(block?.playType||block?.pitches?.length||block?.offense=="PR")
+          if(block?.playType||block?.pitches?.length||block?.offense=="PR"||block?.offense=="BB")
           {
             res.write(`<div class="toggleNext">`);
             res.write(getScoreHTML(block));
@@ -909,12 +909,18 @@ function writeMain(res,gc) {
         if(gi==0)
           res.write('<div class="games scroll"><table>');
         res.write('<tr>');
-        let matchType = "vs";
+        let matchType = "@";
+        let mypos = 0;
         if(game.home_away == "home")
-          matchType = "@";
-        res.write(`<td>${linkStart}${game.getMyTeam().name} (${game.owning_team_score})</a></td>`);
+        {
+          matchType = "vs";
+          mypos = 1;
+        }
+        const myteam = game.teams[mypos];
+        const oppo = game.teams[1-mypos];
+        res.write(`<td>${linkStart}${myteam.name} (${game.owning_team_score})</a></td>`);
         res.write(`<td>${matchType}<td>`);
-        res.write(`<td>${linkStart}${game.getOtherTeam().name} (${game.opponent_team_score})</a></td>`);
+        res.write(`<td>${linkStart}${oppo.name} (${game.opponent_team_score})</a></td>`);
         res.write(`<td>${linkStart}`);
         if(game.event?.event?.start?.datetime)
           res.write(Util.toLocaleDateTimeString(game.event.event.start.datetime, game.event.event.end.datetime));

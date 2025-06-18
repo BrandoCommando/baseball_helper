@@ -857,6 +857,7 @@ class game {
         break;
       case "end_at_bat":
         event.batterId = this.lineup[tpos][this.currentBatter[tpos]];
+        this.pitched = true;
         switch(event.attributes.reason){
           case 'catcher_interference':
             event.offense = event.playResult = "CI";
@@ -917,7 +918,7 @@ class game {
     if(this.counts.outs >= 3)
     {
       const pstats = this.getPlayerStats(event.pitcherId, 1-this.ballSide);
-      pstats.pitchingStats.lob += this.bases.filter((b)=>typeof(b)=="string"&&b!="").length;
+      pstats.pitchingStats.lob += this.bases.filter((b,i)=>i>0&&typeof(b)=="string"&&b!="").length;
       this.resetCount(true);
       this.clearBases();
     }
