@@ -1100,6 +1100,8 @@ class game {
             }
           });
         this.advanceBases(event,false,parent);
+        if(event.attributes?.extendedPlayResult?.indexOf("safe")>-1)
+          this.advanceBase(0,event,1,parent);
         break;
       case "sacrifice_fly":
         event.offense = "SAC";
@@ -1254,9 +1256,12 @@ class game {
     {
       case 'attempted_pickoff':
         return true;
+      case 'defensive_indifference':
+        event.offense = "DI";
+        break;
       case 'stole_base':
-        event.offense = "SB";
         event.recorded = {sb:++stats.battingStats.sb};
+        event.offense = "SB";
         catcherStats.catchingStats.sb++;
         pitcherStats.pitchingStats.sb++;
         break;

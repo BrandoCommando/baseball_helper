@@ -711,7 +711,11 @@ function getScoreHTML(block) {
   if(offense=="BB"||offense=="HP")
     marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -30.811)"/>`;
   if(['SAC',"K"].indexOf(offense)>-1)
-    marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 7.5-7.5m-.5 -1.5l1.943 1.943" transform="translate(-13.749 -30.811)"/>`;
+  {
+    if(block.bases.length==1&&block.outs)
+      marks += `<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" d="m60 85 7.5-7.5m-.5 -1.5l1.943 1.943" transform="translate(-13.749 -30.811)"/>`;
+    else marks += base1;
+  }
   if(offense=="1B")
     marks += `${base1}<path style="fill:none;stroke:#000;stroke-width:1.2;stroke-linecap:round" d="M28.574 38.48a6.953 5.623 0 0 1-6.952 5.623 6.953 5.623 0 0 1-6.953-5.623 6.953 5.623 0 0 1 6.953-5.624 6.953 5.623 0 0 1 6.952 5.624z" transform="translate(-13 -19.811)"/>`;
   else if(['FC','E','Kd3'].indexOf(offense)>-1)
@@ -846,6 +850,8 @@ function writeMain(res,gc) {
     res.write(`GC Games for ${gc.email}`);
   else if(gc.email) res.write(gc.email);
   res.write(`</title></head><body><div class="page">`);
+  // if(gc.games?.length==1)
+    res.write(`<div class="noprint"><a href="/">Back to Teams</a></div>`);
   const suffix = gc.link_suffix || ""; //req.query.user ? `&user=${req.query.user}` : "";
   if(gc.events)
   {
@@ -1062,6 +1068,8 @@ function writeMain(res,gc) {
           return row;
         });
       }
+      if(oppoline)
+        oppoline.sort((a,b)=>a[1]<b[1]?-1:1);
       if(gc.stream?.game_status!="completed")
       {
         if(gc.game.events?.length)
@@ -1118,7 +1126,6 @@ function writeMain(res,gc) {
     res.write('</div>');
   }
   writeScripts(res);
-  res.write(`<div class="noprint"><a href="/">Back to Teams</a></div>`);
   res.write(`<a href="/logout" class="noprint">Log Out</a>`);
   res.write(`</div></body></html>`);
   res.end();
