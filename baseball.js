@@ -134,7 +134,11 @@ class game {
             d.player = p.name;
         }
         if(!d.player)
-          d.player = this.getPlayerName(d.playerId);
+        {
+          const pname = this.getPlayerName(d.playerId);
+          if(pname)
+            d.player = pname;
+        }
       });
       if(event.outs)
         event.defender = event.attributes.defenders.map((d)=>d.player||d.position).join(" + ");
@@ -149,9 +153,11 @@ class game {
       return p.name;
     if(long&&p?.long_name)
       return p.long_name;
+    if(p?.first_name)
+      return p.first_name;
     if(p?.last_name)
       return p.last_name;
-    return playerId;
+    return false;
   }
   setMyTeam(team) {
     let tside = 1;
@@ -378,7 +384,7 @@ class game {
         if(typeof(defenderId)=="string")
         {
           d.playerId = defenderId;
-          d.player = this.getPlayerName(defenderId);
+          d.player = this.getPlayerName(defenderId) || d.position;
         }
         const dstats = this.getPlayerStats(defenderId||(event.home?0:1),event.home?0:1);
         // if(dstats.name != defenderId && dstats.name.indexOf("Other (")==-1)
@@ -990,7 +996,7 @@ class game {
           bstats.battingStats.tf2++;
         bstats.battingStats.tf++;
         block.pitches.push("F");
-        if(this.counts.strikes<3 && event.attributes.advancesCount) {
+        if(this.counts.strikes<2 && event.attributes.advancesCount) {
           this.counts.strikes++;
           block.strikes = this.counts.strikes;
         }
@@ -1258,6 +1264,9 @@ class game {
         return true;
       case 'defensive_indifference':
         event.offense = "DI";
+        break;
+      case 'offensive_interference':
+        event.offense = "OI";
         break;
       case 'stole_base':
         event.recorded = {sb:++stats.battingStats.sb};
@@ -1690,7 +1699,7 @@ class game {
     return {
       score: { home: this.runs[0], away: this.runs[1] },
       inning: { side: this.ballSide === 0 ? "Top" : "Bottom", which: this.inning },
-      count: this.counts,
+      count: { ...this.counts },
       bases: { first: this.getRunner(1), second: this.getRunner(2), third: this.getRunner(3) },
       batter: batter
     };
