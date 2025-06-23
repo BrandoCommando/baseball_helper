@@ -472,9 +472,8 @@ app.get('/stats', bb_session, async(req,res)=>{
       })
       .catch((e)=>res.status(404).json({error:e}));
 });
-app.get('/schedule', bb_session, async(req,res)=>{
-  const gc_email = req.cookies?.gc_email || req.query.gc_email || req.query.email;
-  const cache = new Cache(req, res);
+const filter_schedule = async(gc_email,cache,req)=>{
+  return new Promise(async(resolve,reject)=>{
   const gc = new GameChanger(gc_email, null, cache);
   const token = await gc.getToken();
   if(!token?.access)
@@ -545,6 +544,35 @@ app.get('/schedule', bb_session, async(req,res)=>{
     }
     return 0;
   });
+  resolve(filtered);
+  });
+};
+app.get('/schedule', bb_session, async(req,res)=>{
+  const cache = new Cache(req, res);
+  let gc_email = req.cookies?.gc_email || req.query.gc_email || req.query.email;
+  let filtered = [];
+  if(!!gc_email) {
+    await filter_schedule(gc_email, cache, req).then((schedule)=>{
+      if(Array.isArray(schedule)&&schedule.length>0)
+        for(var s of schedule)
+          filtered.push(s);
+    });
+  } else {
+    await cache.hkeys('gamechanger_tokens')
+      .then(async(keys)=>{
+        for(const key of keys)
+        {
+          const token = await cache.hget('gamechanger_tokens', key);
+          const gc = new GameChanger(token,false,cache);
+          gc.email = key;
+          await filter_schedule(key, cache, req).then((schedule)=>{
+            if(Array.isArray(schedule)&&schedule.length>0)
+              for(var s of schedule)
+                filtered.push(s);
+          });
+        }
+      });
+  }
   return res.send({schedule:filtered,query:req.query});
 });
 app.get('/', bb_session, async(req,res)=>{
