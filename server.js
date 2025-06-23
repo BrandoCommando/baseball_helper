@@ -472,6 +472,73 @@ app.get('/stats', bb_session, async(req,res)=>{
       })
       .catch((e)=>res.status(404).json({error:e}));
 });
+app.get('/schedule', bb_session, async(req,res)=>{
+  const gc_email = req.cookies?.gc_email || req.query.gc_email || req.query.email;
+  const cache = new Cache(req, res);
+  const gc = new GameChanger(gc_email, null, cache);
+  const token = await gc.getToken();
+  if(!token?.access)
+    return showLogin(req,res,token!=null);
+  const schedule = this.schedule = await gc.getApi(`me/schedule`, true).then((s)=>s?.schedule?s.schedule:s);
+  let filtered = [...schedule.events];
+  if(req.query?.filter)
+  {
+    const filter = `${req.query.filter}`.toLowerCase();
+    if(schedule?.events?.length)
+      filtered = filtered.filter((e)=>{
+        return JSON.stringify(e).toLowerCase().indexOf(filter)>-1;
+      });
+  }
+  if(req.query.team)
+    filtered = filtered.filter((e)=>req.query.team.indexOf(e.team_id)>-1);
+  if(req.query.kind)
+    filtered = filtered.filter((e)=>e.kind==req.query.kind);
+  if(req.query.incomplete)
+    filtered = filtered.filter((e)=>!e.scoring||e.scoring.state!="completed");
+  const now = Date.now();
+  if(req.query.started)
+    filtered = filtered.filter((e)=>Date.parse(e.start_time)<=now);
+  if(req.query.future)
+    filtered = filtered.filter((e)=>Date.parse(e.end_time)>now);
+  for(var i=0;i<filtered.length;i++)
+  {
+    const e = filtered[i];
+    e.locale_start_time = Util.toLocaleDateTimeString(e.start_time);
+    e.team = await gc.getApi(`teams/${e.team_id}`).then((t)=>{
+      if(typeof(t)=="object"&&t?.id)
+        return {id:t.id,name:t.name};
+    });
+    const event = await gc.getApi(`events/${e.id}`);
+    if(event.event)
+      e.event = event.event;
+    if(event.pregame_data)
+      e.pregame_data = event.pregame_data;
+    // if(req.query.publishable)
+    // e.video_stream = await gc.videoStreamApi(e.team_id, e.id).then((s)=>typeof(s)=="object"?s:{"error":s});
+  }
+  if(req.query.publishable)
+  {
+    await Promise.all(filtered.map((event)=>
+        gc.videoStreamApi(event.team_id, event.id)
+          .then((s)=>typeof(s)=="object"?s:{"error":s})
+          .then((stream)=>event.video_stream=stream)));
+    filtered = filtered.filter((e)=>e.video_stream?.publish_url);
+  }
+  filtered.sort((a,b)=>{
+    if(typeof(a)!="object"||typeof(b)!="object") return 0;
+    let ae = a.event;
+    let be = b.event;
+    if(ae.end?.datetime&&be.end?.datetime)
+    {
+      const da = Date.parse(ae.end.datetime);
+      const db = Date.parse(be.end.datetime);
+      if(da<db) return -1;
+      if(da>db) return 1;
+    }
+    return 0;
+  });
+  return res.send({schedule:filtered,query:req.query});
+});
 app.get('/', bb_session, async(req,res)=>{
   const cache = new Cache(req,res);
   let gc_email = req.cookies?.gc_email;
