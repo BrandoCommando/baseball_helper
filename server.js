@@ -513,9 +513,17 @@ app.get('/schedule', bb_session, async(req,res)=>{
       e.event = event.event;
     if(event.pregame_data)
       e.pregame_data = event.pregame_data;
+    if(req.query.stream||req.query.positions)
+    {
+      e.config = await cache.hget('gamechanger_config', e.id).then((config)=>typeof(config)=="string"?JSON.parse(config):{});
+    }
     // if(req.query.publishable)
     // e.video_stream = await gc.videoStreamApi(e.team_id, e.id).then((s)=>typeof(s)=="object"?s:{"error":s});
   }
+  if(req.query.stream)
+    filtered = filtered.filter((e)=>e.config?.stream);
+  if(req.query.positions)
+    filtered = filtered.filter((e)=>e.config?.positions);
   if(req.query.publishable)
   {
     await Promise.all(filtered.map((event)=>

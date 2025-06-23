@@ -1086,7 +1086,7 @@ function writeMain(res,gc) {
           <strong class="toggleNext">${gc.team.name}</strong>
           <div class="">
           <div class="rsvp" style="float:left">${rsvp?lineup.map((row)=>rsvp[row[0]]&&rsvp[row[0]][0].toUpperCase().replace("U","?")||"?").join("<br>"):""}</div>
-          <textarea name="config[lineup]" class="lineup" rows="12" cols="50">${lineup.map((row)=>row.join("\t")).join("\n")}</textarea>
+          <textarea name="config[lineup]" class="lineup" rows="12" cols="60">${lineup.map((row)=>row.join("\t")).join("\n")}</textarea>
           <div style="clear:both"></div>
           </div>
           </div><div class="lineup">
@@ -1096,9 +1096,23 @@ function writeMain(res,gc) {
           </div>
           </div></div>
           <br>
+          </div></fieldset>
+          <fieldset><legend class="toggleNext">Automatic Functions</legend>
+          <div>
+          <label><input type="checkbox" name="config[positions]" value="1"${gc.config.positions?" checked":""} />
+            Auto-update positions (Above)</label><br>
+          <label><input type="checkbox" name="config[stream]" value="1"${gc.config.stream?" checked":""} />
+            Auto-Stream</label>`);
+          if(!gc.game.video_stream?.publish_url)
+            res.write(`<span class="error">Error: Needs Video Publish URL</span>`);
+          else {
+            const stream_url = gc.config?.stream_url || "https://vs15.yourgamecam.com/live/montalvolittleleague/montalvolittleleague-defisher-homeplate.stream/playlist.m3u8?uid=000000";
+            res.write(`&nbsp;<label>URL: <input type="text" name="config[stream_url]" size="50" value="${stream_url}" />`);
+          }
+          res.write(`</div>
+          </fieldset>
           <input type="submit" name="command" value="Update" />
           <input type="submit" name="command" value="Send" />
-          </div></fieldset>
           </form><br>`);
       }
       else {
@@ -1165,6 +1179,7 @@ function writeScripts(res) {
     .breakup{page-break-before:always;margin-top:20px;}
     .break{page-break-after:always;}
     .hasEvents > span { color: #000033; cursor: pointer; }
+    .error{color:red;}
     a { text-decoration: none; color: #000099; }
     a:hover { text-decoration: underline; }
     td.top{border-top:4px solid black}
