@@ -850,7 +850,7 @@ function writeMain(res,gc) {
     res.write(`GC Games for ${gc.email}`);
   else if(gc.email) res.write(gc.email);
   res.write(`</title></head><body><div class="page">`);
-  // if(gc.games?.length==1)
+  if(!gc.teams?.length)
     res.write(`<div class="noprint"><a href="/">Back to Teams</a></div>`);
   const suffix = gc.link_suffix || ""; //req.query.user ? `&user=${req.query.user}` : "";
   if(gc.events)
@@ -1099,9 +1099,9 @@ function writeMain(res,gc) {
           </div></fieldset>
           <fieldset><legend class="toggleNext">Automatic Functions</legend>
           <div>
-          <label><input type="checkbox" name="config[positions]" value="1"${gc.config.positions?" checked":""} />
+          <label><input type="checkbox" name="config[positions]" value="1"${gc.config?.positions?" checked":""} />
             Auto-update positions (Above)</label><br>
-          <label><input type="checkbox" name="config[stream]" value="1"${gc.config.stream?" checked":""} />
+          <label><input type="checkbox" name="config[stream]" value="1"${gc.config?.stream?" checked":""} />
             Auto-Stream</label>`);
           if(!gc.game.video_stream?.publish_url)
             res.write(`<span class="error">Error: Needs Video Publish URL</span>`);
