@@ -879,17 +879,21 @@ class gamechanger {
   createNameTemplate(players) {
     if(!players?.length) return false;
     const ret = {};
-    for(var template of ["{first_name}","{last_name}","{first_name} {last_name}","#{number}"])
+    for(var template of ["{first_name}","{first_name} {last_initial}","{first_initial} {last_name}","{last_name}","{first_name} {last_name}","#{number}"])
     {
       const names = [];
-      const name_func = (p) => template.replace("{first_name}", p.first_name || "").replace("{last_name}", p.last_name || "").replace("#{number}",p.number?`#${p.number}`:"").trim();
+      const name_func = (p) => template
+        .replace("{first_name}", p.first_name || "")
+        .replace("{first_initial}", p.first_name?.length > 0 ? p.first_name.substr(0,1) : "")
+        .replace("{last_initial}", p.last_name?.length > 0 ? p.last_name.substr(0,1) : "")
+        .replace("{last_name}", p.last_name || "")
+        .replace("#{number}",p.number?`#${p.number}`:"").trim();
       if(![...players].find((p)=>{
         const name = name_func(p);
         if(name.length==1) return true;
         if(names.indexOf(name)>-1)
           return true;
-        names.push(name);
-      })) {
+        names.push(name); })) {
         ret.template = template;
         ret.function = name_func;
         break;
