@@ -492,7 +492,7 @@ class gamechanger {
   }
   async teamPlayersApi(teamId) {
     let players = await this.getApi(`teams/${teamId}/players`,true)
-      .then((players)=>players?.length&&players.filter((p)=>p.status=="active"));
+      .then((players)=>players&&Array.isArray(players)&&players.filter((p)=>p.status=="active"));
     if(!Array.isArray(players)||!players.length)
     {
       if(this.proxies&&this.proxies[teamId])
@@ -848,19 +848,24 @@ class gamechanger {
   }
   async getTeams() {
     return new Promise(async(resolve,reject)=>{
-      const teams = await this.getApi("me/teams?include=user_team_associations", true);
-      if(!teams) return reject('No teams found');
-      teams.sort((a,b)=>{
-        if(a.created_at&&b.created_at)
-        {
-          const da = Date.parse(a.created_at);
-          const db = Date.parse(b.created_at);
-          if(da < db) return 1;
-          if(da > db) return -1;
-          return 0;
-        }
+      const teams = await this.getApi("me/teams?include=user_team_associations", true)
+        .then((teams)=>{if(teams&&Array.isArray(teams)) return teams; else return false;});
+      if(!teams) return resolve([]); //reject('No teams found');
+      if(Array.isArray(teams))
+        teams.sort((a,b)=>{
+          if(a.created_at&&b.created_at)
+          {
+            const da = Date.parse(a.created_at);
+            const db = Date.parse(b.created_at);
+            if(da < db) return 1;
+            if(da > db) return -1;
+            return 0;
+          }
+        });
+      teams.forEach((team)=>{
+        this.teams[team.id] = new Team(team);
       });
-      return resolve(this.teams=[...teams].map((t)=>new Team(t)));
+      return resolve(this.teams);
     });
   }
   async loadGameStreamEvents(stream_id)
@@ -1054,15 +1059,14 @@ class gamechanger {
     this.user = await this.getApi("me/user", true);
     await this.getOrganizations();
     if(!this.user.id) return false;
+    const thisYear = new Date().getFullYear();
     this.games = [];
     this.teams = {};
     const gc = this;
     const promises = [];
-    const teams = await this.getTeams();
-    for(var index=0;index<teams.length;index++)
-    {
-      const team_id = teams[index].id;
-      const team = new Team(teams[index]);
+    const teams = Object.values(await this.getTeams());
+    teams.forEach((team)=>{
+      const team_id = team.id;
       if(team.organizations?.length)
         if(team.organizations.forEach((org)=>{
           if(this.organizations[org.organization_id]) return;
@@ -1080,34 +1084,32 @@ class gamechanger {
             }));
           }));
         }));
-      gc.teams[team_id] = team;
-      promises.push(this.getApi(`teams/${team_id}/schedule/?fetch_place_details=true`,team.season_year>=new Date().getFullYear()).then((schedule)=>{
-        if(gc.teams[team_id])
-          gc.teams[team_id].schedule = [];
+      promises.push(this.getApi(`teams/${team_id}/schedule/?fetch_place_details=true`,team.season_year>=thisYear).then((schedule)=>{
+        if(!team.schedule)
+          team.schedule = [];
         for(var s of schedule)
         {
           if(s.event?.status!="canceled")
           {
             gc.schedule.push(s);
-            if(gc.teams[team_id])
-              gc.teams[team_id].schedule.push(s);
+            if(team?.schedule)
+              team.schedule.push(s);
           }
         }
       }));
-    }
+    });
     await Promise.all(promises).catch((reason)=>console.log(`Bad promises!`, reason));
     promises.splice(0,promises.length);
-    gc.schedule.sort(Util.eventSort);
-    for(var index=0;index<teams.length;index++)
-    {
-      const team_id = teams[index].id;
-      const team = new Team(teams[index]);
-      promises.push(this.getApi(`teams/${team_id}/game-summaries`,true).then((games)=>{
+    if(gc.schedule?.length)
+      gc.schedule.sort(Util.eventSort);
+    teams.forEach((team)=>{
+      const team_id = team.id;
+      promises.push(this.getApi(`teams/${team_id}/game-summaries`,team.season_year>=thisYear).then((games)=>{
         if(games.length)
           for(var gi=0;gi<games.length;gi++)
           {
-            const game = new Game(games[gi],this.findData,this.teams[team_id]);
-            game.event = this.teams[team_id].schedule?.find((rec)=>rec.event?.id==game.id);
+            const game = new Game(games[gi],this.findData,team);
+            game.event = team.schedule?.find((rec)=>rec.event?.id==game.id);
             // if(game.event_id)
             //   game.event = await this.getApi(`events/${game.event_id}`);
             // if(game.game_status==="live"&&game.game_stream?.id)
@@ -1136,11 +1138,11 @@ class gamechanger {
               game.teams[1] = {id:team.id, name:team.name, players:team.players};
             if(!game.getMyTeam().name&&gc.team?.name)
               game.setMyTeam(gc.team);
-            this.teams[team_id].addGame(game);
+            team.addGame(game);
             this.games.push(game);
           }
         }));
-    }
+    });
     await Promise.all(promises).catch((reason)=>console.log(`Bad promises!`, reason));
     this.games.sort(Util.eventSort);
   }
@@ -1164,7 +1166,6 @@ class gamechanger {
           }
           const team = new Team(t);
           this.teams[team.id] = team;
-          this.teams[team.id].games = [];
           promises.push(this.getApi(`teams/${team.id}/schedule/?fetch_place_details=true`)
             .then((schedule)=>this.teams[team.id].schedule = schedule));
         }
@@ -1245,7 +1246,7 @@ class gamechanger {
                 game.teams[0] = {id:team.id, name:team.name, players:team.players};
               else if(!game.teams[1].id)
                 game.teams[1] = {id:team.id, name:team.name, players:team.players};
-              this.teams[team_id].addGame(game);
+              this.teams[team_id].addGame({...game});
               this.games.push(game);
             }
         }));
@@ -1259,28 +1260,6 @@ class gamechanger {
         const games = await this.getApi(`public/teams/${teamId}/games`);
         return res.send({team,players,games,requests:this.requests});
       }
-    }
-    if(req.query?.filter)
-    {
-      const filter = `${req.query.filter}`.toLowerCase();
-      const schedule = this.schedule = await this.getApi(`me/schedule`, true).then((s)=>s?.schedule?s.schedule:s);
-      let filtered = [];
-      if(schedule?.events?.length)
-        filtered = [...schedule.events].filter((e)=>{
-          return JSON.stringify(e).toLowerCase().indexOf(filter)>-1;
-        });
-      if(req.query.kind)
-        filtered = filtered.filter((e)=>e.kind==req.query.kind);
-      if(req.query.incomplete)
-        filtered = filtered.filter((e)=>!e.scoring||e.scoring.state!="completed");
-      for(var i=0;i<filtered.length;i++)
-      {
-        const e = filtered[i];
-        e.video_stream = await this.videoStreamApi(e.team_id, e.id).then((s)=>typeof(s)=="object"?s:{"error":s});
-      }
-      if(req.query.publishable)
-        filtered = filtered.filter((e)=>e.video_stream?.publish_url);
-      return res.send({filtered,filter});
     }
     if(req.query?.event)
     {
@@ -1377,7 +1356,7 @@ class gamechanger {
           }
 
         const game = new Game(edata.event, false, edata.team);
-        game.video_stream = game.video_stream = await this.videoStreamApi(edata.team.id, event_id).then((r)=>{if(r=="Not Found")return{"error":"Not Found"};else return r;});
+        game.video_stream = await this.videoStreamApi(edata.team.id, event_id).then((r)=>{if(r=="Not Found")return{"error":"Not Found"};else return r;});
         game.setMyTeam(edata.team);
         if(edata.opponent)
           game.setOtherTeam(edata.opponent);
@@ -1508,11 +1487,13 @@ class gamechanger {
       const tstats = {};
       const pstats = game.player_stats;
       const game_id = game.id ?? game.event_id;
-      Object.keys(this.players).forEach((teamId)=>{
-        const team = this.players[teamId];
+      game.teams.forEach((team)=>{
+        const teamId = team.id;
+        //const team = this.players[teamId];
         if(!tstats[teamId])
           tstats[teamId] = {};
-        team.forEach((player)=>{
+        if(team.players?.length)
+        team.players.forEach((player)=>{
           if(!(player.id&&player.first_name)) return;
           if(pstats[player.id])
           {
@@ -1532,7 +1513,7 @@ class gamechanger {
         // console.log(`Team store for ${teamid}`, tstats[teamid]);
         await this.storeTeamStats(tstats, teamid, game_id);
       }
-      out.stats = pstats;
+      gc.stats = pstats;
     }
     if(req.query?.format?.indexOf("json")>-1)
     {

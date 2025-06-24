@@ -18,10 +18,14 @@ class team {
     this.games = [];
   }
   addGame(game) {
+    const teams = [];
+    if(game.teams)
+      for(var team of game.teams)
+        teams.push({id:team.id, name:team.name});
+    if(!this.games) this.games = [];
     this.games.push({
       id: game.event_id || game.id,
-      teams: game.teams,
-      runs: game.runs
+      teams: teams
     });
     return this;
   }
