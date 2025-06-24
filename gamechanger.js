@@ -1541,7 +1541,7 @@ class gamechanger {
     }
     else if(req.headers.accept?.indexOf("html")>-1)
     {
-      writeMain(res, gc);
+      writeMain(res, gc, !Object.keys(req.query).length);
     } else res.send(gc);
   }
   async sendVideo(video,res) {

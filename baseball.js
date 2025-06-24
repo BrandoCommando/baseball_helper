@@ -227,6 +227,7 @@ class game {
     if(!lastEvent.code&&last?.code=="ball_in_play") lastEvent = last;
     const batterId = lastEvent?.batterId ?? event.batterId;
     const block = this.scorebooks.getCurrentBlock(this.ballSide, runnerId); // [this.ballSide][this.inning][runnerId];
+    if(!block.id) block.id = event.sequence_id;
     const stats = this.getPlayerStats(runnerId, this.ballSide);
     if(block.outs||block.runs) {
       // console.warn("Advance after out/run?", {event,block});
@@ -951,6 +952,7 @@ class game {
     const cstats = this.getPlayerStats(this.getPosition(1-this.ballSide,'C')||(1-this.ballSide),1-this.ballSide);
     this.pitched = true;
     const block = this.scorebooks.getCurrentBlock(tpos, event.batterId);
+    if(!block.id) block.id = event.sequence_id;
     this.pitchCounts[1-tpos]++;
     bstats.battingStats.ps++;
     // if(event.attributes?.advancesCount)

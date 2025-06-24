@@ -1,5 +1,6 @@
 class scoreblock {
   constructor(playerId,row) {
+    this.id = "";
     this.playerId = playerId;
     this.pitcher = "";
     this.row = row;

@@ -61,6 +61,54 @@ function writeEventHTML(e, res, gc) {
     <td><div class="float hide">${deets}</div><button class="togglePrev">Show</button></td></tr>`);
 }
 
+function writeSummary(game, res, g, extras)
+{
+  res.write(`<div class="summary ${extras?"breakup":""}">`);
+  const hrow = [''];
+  const rows = [[game.teams[0].name||game.team.name],[game.teams[1].name||game.team.name]];
+  const total_stats=[{runs:0,hits:0,errors:0},{runs:0,hits:0,errors:0}];
+  for(var inning=0;inning<9;inning++)
+  {
+    hrow.push(inning+1);
+    for(var side=0;side<=1;side++)
+    {
+      if(!game.inning_stats[inning]||!game.inning_stats[inning][side])
+      {
+        rows[side][inning+1] = "";
+        continue;
+      }
+      for(var stat of ['runs','hits','errors'])
+        total_stats[side][stat] += game.inning_stats[inning][side][stat];
+      rows[side][inning+1] = game.inning_stats[inning][side].runs;
+    }
+  }
+  hrow.push('R');
+  rows[0].push(total_stats[0].runs);
+  rows[1].push(total_stats[1].runs);
+  hrow.push('H');
+  rows[0].push(total_stats[0].hits);
+  rows[1].push(total_stats[1].hits);
+  hrow.push('E');
+  rows[0].push(total_stats[0].errors);
+  rows[1].push(total_stats[1].errors);
+  res.write(`<table border="1"><thead><tr><td>${hrow.join('</td><td>')}</td></tr></thead><tbody>`);
+  for(var side=0;side<=1;side++)
+    res.write(`<tr><td class="teamname">${rows[side].join('</td><td>')}</td></tr>`);
+  res.write(`</table>`);
+  res.write(`</div>`);
+  if(!extras) return;
+  res.write('<button class="noprint toggleNext">Toggle Stats</button>');
+  res.write(`<div class="stats">`);
+  var stat;
+  for(var side=0;side<=1;side++)
+  {
+    const lineup = [...game.lineup[side]];
+    lineup.push(side);
+    res.write(showStats(game.player_stats, lineup, game));
+  }
+  res.write(`</div>`);
+}
+
 /**
  * 
  * @param {Game} game 
@@ -68,50 +116,11 @@ function writeEventHTML(e, res, gc) {
 function writeScorebook(game, res, gc) {
   if(game.scorebooks)
   {
-    res.write(`<div class="summary">`);
-    const hrow = [''];
-    const rows = [[game.teams[0].name||game.team.name],[game.teams[1].name||game.team.name]];
-    const total_stats=[{runs:0,hits:0,errors:0},{runs:0,hits:0,errors:0}];
-    for(var inning=0;inning<9;inning++)
-    {
-      hrow.push(inning+1);
-      for(var side=0;side<=1;side++)
-      {
-        if(!game.inning_stats[inning]||!game.inning_stats[inning][side])
-        {
-          rows[side][inning+1] = "";
-          continue;
-        }
-        for(var stat of ['runs','hits','errors'])
-          total_stats[side][stat] += game.inning_stats[inning][side][stat];
-        rows[side][inning+1] = game.inning_stats[inning][side].runs;
-      }
-    }
-    hrow.push('R');
-    rows[0].push(total_stats[0].runs);
-    rows[1].push(total_stats[1].runs);
-    hrow.push('H');
-    rows[0].push(total_stats[0].hits);
-    rows[1].push(total_stats[1].hits);
-    hrow.push('E');
-    rows[0].push(total_stats[0].errors);
-    rows[1].push(total_stats[1].errors);
-    res.write(`<table border="1"><thead><tr><td>${hrow.join('</td><td>')}</td></tr></thead><tbody>`);
-    for(var side=0;side<=1;side++)
-      res.write(`<tr><td class="teamname">${rows[side].join('</td><td>')}</td></tr>`);
-    res.write(`</table>`);
-    res.write(`</div>`);
-    res.write('<button class="noprint toggleNext">Show Stats</button>');
-    res.write(`<div class="stats hide">`);
-    var stat;
-    for(var side=0;side<=1;side++)
-    {
-      const lineup = [...game.lineup[side]];
-      lineup.push(side);
-      res.write(showStats(game.player_stats, lineup, game));
-    }
-    res.write(`</div>`);
+    res.write('<div class="noprint">');
+    writeSummary(game, res, gc, false);
+    res.write('</div>');
     res.write(`<div class="scorebook">`);
+    const blocks = {};
     for(var side=0;side<=1;side++)
     {
       /** @type ScoreBook */
@@ -212,11 +221,17 @@ function writeScorebook(game, res, gc) {
             res.write(`<td class="block">`);
           if(block?.playType||block?.pitches?.length||block?.offense=="PR"||block?.offense=="BB")
           {
-            res.write(`<div class="toggleNext">`);
-            res.write(getScoreHTML(block));
             if(block.events?.length)
               block.events.forEach((e)=>delete e.snapshotJ);
-            res.write(`</div><div class="info hide float noprint"><div class="tablify biggin">${Util.tablify(block)}</div></div>`);
+            if(block.id)
+            {
+              const block_id = block.id;
+              delete block.id;
+              blocks[block_id] = block;
+              res.write(`<div class="toggleBlock" data-block-id="${block_id}">`);
+              res.write(getScoreHTML(block));
+              res.write(`</div>`);
+            } else res.write(getScoreHTML(block));
           } else if(block!=undefined) console.warn(`Bad Block in ${col}/${colin}?`, block);
           res.write(`</td>`);
         });
@@ -235,6 +250,14 @@ function writeScorebook(game, res, gc) {
     }
 
     res.write("</div>");
+    res.write('<div class="hide noprint blocks">')
+    for(var block_id of Object.keys(blocks))
+    {
+      res.write(`<div id="${block_id}" class="info float hide noprint"><div class="tablify biggin">${Util.tablify(blocks[block_id])}</div></div>`);
+    }
+    res.write('</div>');
+    //res.write(`<script type="text/javascript">window.blocks={...window.blocks||{},...${JSON.stringify(blocks)}};</script>`);
+    writeSummary(game, res, gc, true);
   }
 }
 
@@ -836,7 +859,7 @@ function getScoreHTML(block) {
   return marks;
 }
 
-function writeMain(res,gc) {
+function writeMain(res,gc,istop) {
   res.header("Content-Type", "text/html");
   res.write(`<html><head><title>`);
   if(gc.games?.length==1)
@@ -849,18 +872,20 @@ function writeMain(res,gc) {
   else if(gc.games?.length>1)
     res.write(`GC Games for ${gc.email}`);
   else if(gc.email) res.write(gc.email);
-  res.write(`</title></head><body><div class="page">`);
-  if(!gc.teams?.length)
+  res.write(`</title>`);
+  writeStyles(res);
+  res.write(`</head><body><div class="page">`);
+  if(!istop)
     res.write(`<div class="noprint"><a href="/">Back to Teams</a></div>`);
   const suffix = gc.link_suffix || ""; //req.query.user ? `&user=${req.query.user}` : "";
   if(gc.events)
   {
+    writeScorebook(gc, res, gc);
     res.write(`<table border="1">`);
     if(gc.teams)
       res.write(`<caption>${gc.teams[0].name} @ ${gc.teams[1].name}</caption>`);
     gc.events.forEach((e)=>writeEventHTML(e,res,gc));
     res.write("</table>");
-    writeScorebook(gc, res, gc);
   }
   if(gc.schedule?.length)
   {
@@ -905,7 +930,7 @@ function writeMain(res,gc) {
   }
   if(gc.games?.length)
   {
-    res.write('<section class="games_wrap"><strong class="toggleNext">Games</strong><div>')
+    // res.write('<section class="games_wrap"><strong class="toggleNext">Games</strong><div>')
     gc.games.forEach((game,gi)=>{
       if(!game.teams) return;
       const t1 = game.teams[0];
@@ -940,6 +965,7 @@ function writeMain(res,gc) {
         return;
       }
       if(gc.events) return;
+      writeScorebook(game, res, gc);
       res.write(`<div class="toggleNext"><h1><a href="/stats?team=${t1.id}">${t1.name}</a> (${game.runs[0]}) @ <a href="/stats?team=${t2.id}">${t2.name}</a> (${game.runs[1]}) on `);
       if(game.event.event.start.datetime)
         res.write(Util.toLocaleDateTimeString(game.event.event.start.datetime));
@@ -949,9 +975,8 @@ function writeMain(res,gc) {
       res.write(`<table border="1" class="hide">`);
       game.events.forEach((e)=>writeEventHTML(e,res,gc));
       res.write("</table>");
-      writeScorebook(game, res, gc);
     });
-    res.write('</div></section>');
+    // res.write('</div></section>');
   }
 
   if(gc.teams && Object.keys(gc.teams).length > 1)
@@ -1104,7 +1129,7 @@ function writeMain(res,gc) {
           <label><input type="checkbox" name="config[stream]" value="1"${gc.config?.stream?" checked":""} />
             Auto-Stream</label>`);
           if(!gc.game.video_stream?.publish_url)
-            res.write(`<span class="error">Error: Needs Video Publish URL</span>`);
+            res.write(`&nbsp;<span class="error">Error: Needs Video Publish URL</span>`);
           else {
             const stream_url = gc.config?.stream_url || "https://vs15.yourgamecam.com/live/montalvolittleleague/montalvolittleleague-defisher-homeplate.stream/playlist.m3u8?uid=000000";
             res.write(`&nbsp;<label>URL: <input type="text" name="config[stream_url]" size="50" value="${stream_url}" />`);
@@ -1139,15 +1164,15 @@ function writeMain(res,gc) {
     res.write(Util.tablify(gc));
     res.write('</div>');
   }
+  res.write(`</div>`);
   writeScripts(res);
   res.write(`<a href="/logout" class="noprint">Log Out</a>`);
   res.write(`</div></body></html>`);
   res.end();
 }
 
-
-function writeScripts(res) {
-  res.write(`</div><style type="text/css">
+function writeStyles(res) {
+  res.write(`<style type="text/css">
     .page{margin:0 20px;}
     section{margin-bottom:20px}
     .hidden{opacity:0.5}
@@ -1189,7 +1214,10 @@ function writeScripts(res) {
     .sum { font-size: 80%; color: #333; }
     .closed > table { display: none; }
     .closed > .sum { display: inline-block; }
-    </style><style type="text/css" media="print">.page{margin:0px}.noprint{display:none}</style>`);
+    </style><style type="text/css" media="print">.page{margin:0px}.noprint{display:none}</style>
+    `);
+}
+function writeScripts(res) {
   res.write(`<script>
     document.querySelectorAll(".stats thead .key").forEach((el)=>el.addEventListener('click',({target})=>{
       const table = target.closest('table');
@@ -1242,6 +1270,19 @@ function writeScripts(res) {
       parent.querySelectorAll('.tablify .bracket,.tablify .sum').forEach((el)=>el.addEventListener('click',()=>{
         var p = el.parentElement;
         p.classList.toggle("closed");
+      }));
+      parent.querySelectorAll('.toggleBlock').forEach((el)=>el.addEventListener('click',()=>{
+        if(el.nextElementSibling&&el.nextElementSibling.classList.contains('info'))
+        {
+          el.nextElementSibling.classList.toggle('hide');
+          return true;
+        }
+        var blockId = el.dataset.blockId || el.getAttribute('data-block-id');
+        if(!blockId) return false;
+        var blockEl = document.getElementById(blockId);
+        if(!blockEl) return false;
+        el.after(blockEl);
+        blockEl.classList.remove('hide');
       }));
       parent.querySelectorAll('.toggleNext').forEach((el)=>el.addEventListener('click',()=>{el.nextElementSibling.classList.toggle('hide');}));
       parent.querySelectorAll('.togglePrev').forEach((el)=>el.addEventListener('click',()=>{el.previousElementSibling.classList.toggle('hide');})&&el.addEventListener('click',()=>{el.previousSibling.classList.toggle('hide')}));
