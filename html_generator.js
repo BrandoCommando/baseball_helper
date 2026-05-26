@@ -135,7 +135,7 @@ function writeScorebook(game, res, gc) {
         <table class="book" border="1" cellpadding="0" cellspacing="0">
         <thead><tr><td>BO</td><td width="30">#</td>`);
       res.write(`<td width="160"><span class="toggleNext">Player / POS</span><div class="float hide">`);
-      res.write(`<table><tr><td>${game.lineup[side].map((pid)=>[pid,players.find((p)=>p.id==pid).name].join('</td><td>')).join('</td></tr><tr><td>')}</td></tr></table>`);
+      res.write(`<table><tr><td>${game.lineup[side].map((pid)=>[pid,players.find((p)=>p.id==pid)?.name].join('</td><td>')).join('</td></tr><tr><td>')}</td></tr></table>`);
       res.write(`</div></td>`);
       book.columns.forEach((col)=>{
         if(!col.plays.find((play)=>play.playType||play.pitches.length)) return;
@@ -1310,4 +1310,4 @@ function writeScripts(res) {
     </script>`);
 }
 
-module.exports = { writeEventHTML, writeScorebook, writeScripts, writeMain, showTotalStats, showSprayChart, showStats, getScoreHTML };
+module.exports = { writeEventHTML, writeScorebook, writeScripts, writeStyles, writeMain, writeHeader, showTotalStats, showSprayChart, showStats, getScoreHTML };
