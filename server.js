@@ -14,7 +14,7 @@ const bb_session = session(
   {secret:"baseball",name:"baseball",saveUninitialized:false,resave:true,cookie:{secure:false,httpOnly:true,maxAge:24*60*60*1000
   ,store:new RedisStore({prefix:"Yermom",client:new Db("Redis").createClient(true)})
   }});
-const { showTotalStats, writeScripts } = require('./html_generator');
+const { showTotalStats, writeScripts, writeHeader } = require('./html_generator');
 const { Team, Game } = require('./baseball');
 const Util = require('./util');
 
@@ -330,7 +330,7 @@ app.get('/stats', bb_session, async(req,res)=>{
       return res.header('Content-Type', 'application/json').send({teamStats:teamStats.toJson(),ourStats:ourStats.toJson(),datas});
     if(!res.headersSent)
     {
-      res.header('Content-Type', 'text/html');
+      writeHeader(res, 'Stats');
       res.write(`Total Stats: ${scount}`);
       res.write(showTotalStats(teamStats, datas, teams));
       res.write(showTotalStats(ourStats, datas, ourId));
@@ -378,7 +378,7 @@ app.get('/stats', bb_session, async(req,res)=>{
         }
         if(req.query.format=="json")
           return res.header('Content-Type', 'application/json').send({teamStats:teamStats.toJson(),ourStats:ourStats.toJson(),data});
-        res.header('Content-Type', 'text/html');
+        writeHeader(res, 'Stats');
         res.write(`Total Stats: ${scount}`);
         res.write(showTotalStats(teamStats, data, teamId));
         res.write(showTotalStats(ourStats, data, ourId));
@@ -452,7 +452,7 @@ app.get('/stats', bb_session, async(req,res)=>{
           return res.send({totalStats:totalStats.toJson(),allStats,batterIds,requests:gc.requests});
         if(req.query.short)
           gc.shortmode = true;
-        res.header('Content-Type', 'text/html');
+        writeHeader(res, 'Stats');
         res.write(`Total Stats: ${Object.keys(allStats).length}`);
         const nas = {};
         // nas[req.query.player] = allStats;

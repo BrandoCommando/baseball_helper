@@ -858,23 +858,27 @@ function getScoreHTML(block) {
   // return marks;
   return marks;
 }
-
-function writeMain(res,gc,istop) {
+function writeHeader(res,title) {
   res.header("Content-Type", "text/html");
   res.write(`<html><head><title>`);
+  res.write(title);
+  res.write(`</title>`);
+  writeStyles(res);
+  res.write(`</head><body>`);
+}
+function writeMain(res,gc,istop) {
+  let title = gc.email;
   if(gc.games?.length==1)
   {
     const game = gc.games[0];
     const t1 = game.teams[0];
     const t2 = game.teams[1];
-    res.write(`${t1.name} (${game.runs[0]}) @ ${t2.name} (${game.runs[1]})`);
+    title=`${t1.name} (${game.runs[0]}) @ ${t2.name} (${game.runs[1]})`;
   }
   else if(gc.games?.length>1)
-    res.write(`GC Games for ${gc.email}`);
-  else if(gc.email) res.write(gc.email);
-  res.write(`</title>`);
-  writeStyles(res);
-  res.write(`</head><body><div class="page">`);
+    title=`GC Games for ${gc.email}`;
+  writeHeader(res, title);
+  res.write(`<div class="page">`);
   if(!istop)
     res.write(`<div class="noprint"><a href="/">Back to Teams</a></div>`);
   const suffix = gc.link_suffix || ""; //req.query.user ? `&user=${req.query.user}` : "";
@@ -1033,14 +1037,30 @@ function writeMain(res,gc,istop) {
       if(typeof(oppoline)=="string"&&oppoline.indexOf("\n")>-1)
         oppoline = oppoline.replaceAll("\r","").split("\n").map((row)=>row.split("\t"));
       if(Array.isArray(oppoline)&&oppoline.length<7) oppoline = false;
-      const tpos = gc.pregame_data?.home_away=="home"?0:1;
-      if(typeof(lineup)!="object"||gc.game?.inning_positions?.length>1)
+      let tpos = gc.pregame_data?.home_away=="home"?0:1;
+      if(!gc.game?.inning_positions[0]||!gc.game?.inning_positions[0][tpos]||!Object.keys(gc.game?.inning_positions[0][tpos]).find((pid)=>gc.team.players.find((p)=>p.id==pid||p.player_id==pid)))
+        tpos = 1 - tpos;
+      let inning_positions = [];
+      if(gc.game?.inning_positions)
+        inning_positions = gc.game?.inning_positions.map((ip)=>ip[tpos]);
+      console.log('Inning positions', inning_positions);
+      if(gc.game?.lineup[tpos]&&gc.game?.lineup[tpos].length>0)
+        lineup = gc.game.lineup[tpos].map((pid)=>{
+          let p = gc.team.players.find((p)=>p.id==pid||p.player_id==pid);
+          if(!p) p=gc.opponent.players.find((p)=>p.id==pid||p.player_id==pid);
+          const row = [p?.name||""];
+          let pos = 'X';
+          for(var inning=0;inning<6;inning++)
+          {
+            if(inning_positions[inning]&&typeof(inning_positions[inning][pid])!="undefined")
+              pos = inning_positions[inning][pid] || "X";
+            row.push(pos);
+          }
+          return row;
+        });
+      if(typeof(lineup)!="object")
       {
         lineup = [];
-        let inning_positions = [];
-        if(gc.game?.inning_positions)
-          inning_positions = gc.game?.inning_positions.map((ip)=>ip[tpos]);
-        // console.log('Inning positions', inning_positions);
         if(gc.lineup?.length)
           lineup = gc.lineup.map((p)=>{
             let pos = p.position || "X";
@@ -1065,7 +1085,7 @@ function writeMain(res,gc,istop) {
       if(gc.pregame_data.opponent_id)
         gc.game.teams.forEach((t)=>{
           if(t.id==gc.pregame_data.opponent_id)
-            oppoline = t.players.map((p)=>[p.number,p.first_name,p.last_name]);
+            oppoline = t.players.map((p)=>[p?.number,p?.first_name,p?.last_name]);
         });
       if(gc.game?.lineup?.length>1) // after start
       {
@@ -1129,7 +1149,7 @@ function writeMain(res,gc,istop) {
           <label><input type="checkbox" name="config[stream]" value="1"${gc.config?.stream?" checked":""} />
             Auto-Stream</label>`);
           if(!gc.game.video_stream?.publish_url)
-            res.write(`&nbsp;<span class="error">Error: Needs Video Publish URL</span>`);
+            res.write(`&nbsp;<span class="error">Error: Needs Video Publish URL <small>(in GC App, hit Record Video and then External Camera)</small></span>`);
           else {
             const stream_url = gc.config?.stream_url || "https://vs15.yourgamecam.com/live/montalvolittleleague/montalvolittleleague-defisher-homeplate.stream/playlist.m3u8?uid=000000";
             res.write(`&nbsp;<label>URL: <input type="text" name="config[stream_url]" size="50" value="${stream_url}" />`);
@@ -1146,7 +1166,7 @@ function writeMain(res,gc,istop) {
         lineup.forEach((row,ord)=>{
           const name = row[0];
           const player = gc.team.players.find((p)=>p.name==name);
-          res.write(`<tr><td>${ord+1}</td><td>${player.number}</td>`);
+          res.write(`<tr><td>${ord+1}</td><td>${player?.number}</td>`);
           res.write(row.map((cell)=>"<td>"+cell+"</td>").join(""));
           res.write("</tr>");
           });
